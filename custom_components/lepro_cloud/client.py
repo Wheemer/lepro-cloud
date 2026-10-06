@@ -20,9 +20,11 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .const import APP_NAME, APP_VERSION, DEFAULT_LANGUAGE, REGIONS
 from .mqtt_key import MqttKeyError, load_mqtt_private_key
 from .protocol import (
+    make_camera_get_payload,
     make_get_payload,
     make_set_payload,
     subscription_topics,
+    topic_camera_get,
     topic_get,
     topic_set,
 )
@@ -140,18 +142,41 @@ class LeproApi:
         return await self._request("GET", "/user/profile")
 
     async def async_devices(self) -> list[dict[str, Any]]:
-        """Discover devices across all account families."""
+        """Discover Wi-Fi devices and camera records across account families."""
         families = await self._request("GET", f"/family/list/timestamp/{_now_seconds()}")
-        devices: list[dict[str, Any]] = []
+        devices: dict[str, dict[str, Any]] = {}
         for family in _as_list(families):
             fid = family.get("fid")
             if not fid:
                 continue
-            result = await self._request(
-                "GET", f"/v3/device/list/fid/{fid}/timestamp/{_now_seconds()}"
+            device_result, camera_result = await asyncio.gather(
+                self._request(
+                    "GET", f"/v3/device/list/fid/{fid}/timestamp/{_now_seconds()}"
+                ),
+                self._request("GET", f"/camera/list/fid/{fid}"),
             )
-            devices.extend(device for device in _as_list(result) if isinstance(device, dict))
-        return devices
+            for device in _as_list(device_result):
+                did = device.get("did")
+                if did:
+                    devices[str(did)] = device
+            for camera in _as_list(camera_result):
+                did = camera.get("did")
+                if not did:
+                    continue
+                normalized = {
+                    **camera,
+                    "type": 3,
+                    "deviceType": 3,
+                    "name": camera.get("deviceName") or camera.get("pid") or "Lepro Camera",
+                }
+                existing = devices.get(str(did))
+                if existing:
+                    existing.update(
+                        {key: value for key, value in normalized.items() if value not in (None, "")}
+                    )
+                else:
+                    devices[str(did)] = normalized
+        return list(devices.values())
 
     async def async_text(self, url: str) -> str:
         """Download text content from a profile-provided URL."""
@@ -264,10 +289,16 @@ class LeproCoordinator:
             self.connected = False
             return
         self.connected = True
-        for did in self.devices:
-            for topic in subscription_topics(did):
+        for did, device in self.devices.items():
+            is_camera = device.get("type") == 3
+            for topic in subscription_topics(did, is_camera=is_camera):
                 client.subscribe(topic, qos=1)
-            client.publish(topic_get(did), json.dumps(make_get_payload()), qos=1)
+            if is_camera:
+                client.publish(
+                    topic_camera_get(did), json.dumps(make_camera_get_payload()), qos=1
+                )
+            else:
+                client.publish(topic_get(did), json.dumps(make_get_payload()), qos=1)
 
     def _on_disconnect(
         self,

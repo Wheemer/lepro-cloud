@@ -126,16 +126,35 @@ def test_discovery_urls_use_unix_seconds(monkeypatch: Any) -> None:
         [
             FakeResponse({"code": 0, "data": [{"fid": "family-1"}]}),
             FakeResponse({"code": 0, "data": [{"did": "device-1"}]}),
+            FakeResponse(
+                {
+                    "code": 0,
+                    "data": [
+                        {"did": "camera-1", "pid": "C1", "deviceName": "Front Door"}
+                    ],
+                }
+            ),
         ]
     )
     api = _api(client_module, session)
 
-    assert asyncio.run(api.async_devices()) == [{"did": "device-1"}]
+    assert asyncio.run(api.async_devices()) == [
+        {"did": "device-1"},
+        {
+            "did": "camera-1",
+            "pid": "C1",
+            "deviceName": "Front Door",
+            "type": 3,
+            "deviceType": 3,
+            "name": "Front Door",
+        },
+    ]
 
     assert session.requests[0]["url"].endswith("/family/list/timestamp/1720000000")
     assert session.requests[1]["url"].endswith(
         "/v3/device/list/fid/family-1/timestamp/1720000000"
     )
+    assert session.requests[2]["url"].endswith("/camera/list/fid/family-1")
 
 
 def test_login_application_error_is_response_error(monkeypatch: Any) -> None:
