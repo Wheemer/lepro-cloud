@@ -129,6 +129,7 @@ class LeproCloudPlugLockSwitch(LeproCloudPlugSwitch):
     """The physical-button lock switch exposed by the P1 plug."""
 
     _attr_name = "Button Lock"
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(
         self, coordinator: LeproCoordinator, device_id: str, device: dict[str, Any]

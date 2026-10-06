@@ -222,6 +222,7 @@ def test_p1_plug_exposes_and_controls_its_button_lock() -> None:
 
     lock = next(entity for entity in entities if entity.device_id == "p1-1" and entity._attr_name == "Button Lock")
     lock.hass = FakeHass()
+    assert lock._attr_entity_category == "config"
     assert lock.is_on is None
 
     asyncio.run(lock.async_turn_on())
