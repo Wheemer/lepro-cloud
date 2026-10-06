@@ -203,6 +203,31 @@ def test_plug_switch_uses_d1_state_command_and_availability() -> None:
     assert entity.is_on is False
 
 
+def test_p1_plug_exposes_and_controls_its_button_lock() -> None:
+    switch = _load_module("switch")
+    coordinator = FakeCoordinator()
+    device = {"did": "p1-1", "type": 2, "series": "P1", "name": "P1 Plug"}
+    coordinator.devices["p1-1"] = device
+    entry = types.SimpleNamespace(runtime_data=coordinator)
+    entities: list[Any] = []
+
+    asyncio.run(
+        switch.async_setup_entry(FakeHass(), entry, lambda added: entities.extend(added))
+    )
+
+    lock = next(entity for entity in entities if entity.device_id == "p1-1" and entity._attr_name == "Button Lock")
+    lock.hass = FakeHass()
+    assert lock.is_on is None
+
+    asyncio.run(lock.async_turn_on())
+    assert coordinator.commands[-1] == ("p1-1", {"d102": 1})
+    assert lock.is_on is True
+
+    asyncio.run(lock.async_turn_off())
+    assert coordinator.commands[-1] == ("p1-1", {"d102": 0})
+    assert lock.is_on is False
+
+
 def test_light_reports_modes_from_state_datapoints() -> None:
     light = _load_module("light")
     coordinator = FakeCoordinator()

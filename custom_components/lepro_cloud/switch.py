@@ -22,11 +22,14 @@ async def async_setup_entry(
 ) -> None:
     """Set up Lepro Cloud plug switches."""
     coordinator: LeproCoordinator = entry.runtime_data
-    async_add_entities(
-        LeproCloudPlugSwitch(coordinator, did, device)
-        for did, device in coordinator.devices.items()
-        if _is_supported_switch(device)
-    )
+    entities: list[SwitchEntity] = []
+    for did, device in coordinator.devices.items():
+        if not _is_supported_switch(device):
+            continue
+        entities.append(LeproCloudPlugSwitch(coordinator, did, device))
+        if _has_lock_switch(device):
+            entities.append(LeproCloudPlugLockSwitch(coordinator, did, device))
+    async_add_entities(entities)
 
 
 class LeproCloudPlugSwitch(SwitchEntity):
@@ -97,3 +100,48 @@ class LeproCloudPlugSwitch(SwitchEntity):
 def _is_supported_switch(device: dict[str, Any]) -> bool:
     """Return true when a discovered device is safe to expose as a plug switch."""
     return is_plug(device)
+
+
+class LeproCloudPlugLockSwitch(LeproCloudPlugSwitch):
+    """The physical-button lock switch exposed by the P1 plug."""
+
+    _attr_name = "Button Lock"
+
+    def __init__(
+        self, coordinator: LeproCoordinator, device_id: str, device: dict[str, Any]
+    ) -> None:
+        super().__init__(coordinator, device_id, device)
+        self._attr_unique_id = f"{DOMAIN}_{device_id}_button_lock"
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return whether the physical-button lock is enabled."""
+        state = self.coordinator.states.get(self.device_id, {})
+        if "d102" not in state:
+            return None
+        try:
+            return int(state["d102"]) > 0
+        except (TypeError, ValueError):
+            return None
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Enable the physical-button lock."""
+        await self._async_set_lock(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Disable the physical-button lock."""
+        await self._async_set_lock(False)
+
+    async def _async_set_lock(self, enabled: bool) -> None:
+        values = {"d102": 1 if enabled else 0}
+        await self.hass.async_add_executor_job(
+            self.coordinator.command, self.device_id, values
+        )
+        self.coordinator.states.setdefault(self.device_id, {}).update(values)
+        self.async_write_ha_state()
+
+
+def _has_lock_switch(device: dict[str, Any]) -> bool:
+    """Return true only for P1 plugs, whose APK control is d102."""
+    series = device.get("series") or device.get("pid")
+    return str(series or "").upper() == "P1"
