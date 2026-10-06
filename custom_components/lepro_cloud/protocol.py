@@ -57,7 +57,9 @@ BULB_STATE_DATAPOINTS = (
 )
 RGBIC_STATE_DATAPOINTS = BULB_STATE_DATAPOINTS + ("d50", DP_RGBIC_BRIGHTNESS)
 RGBIC_LENGTH_STATE_DATAPOINTS = RGBIC_STATE_DATAPOINTS + ("d53",)
-PLUG_STATE_DATAPOINTS = (DP_ONLINE, DP_ON, "d100", "d101", "d102")
+# P1 has two APK query paths: the plug UI requests d1/d100/d101/d102,
+# while the MQTT connection pool also requests d4/d5. Query their union.
+PLUG_STATE_DATAPOINTS = (DP_ONLINE, DP_ON, "d100", "d101", "d102", "d4", "d5")
 
 
 def topic_get(device_id: str) -> str:

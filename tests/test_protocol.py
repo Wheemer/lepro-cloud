@@ -64,7 +64,7 @@ def test_state_queries_match_the_apk_product_families() -> None:
         "online", "d1", "d2", "d3", "d4", "d5", "d50", "d52", "d53"
     )
     assert state_datapoints_for_series("P1") == (
-        "online", "d1", "d100", "d101", "d102"
+        "online", "d1", "d100", "d101", "d102", "d4", "d5"
     )
     assert state_datapoints_for_series("future-product") == (
         "online", "d1", "d2", "d3", "d4", "d5"
