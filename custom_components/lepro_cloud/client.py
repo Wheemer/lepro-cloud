@@ -12,7 +12,6 @@ import tempfile
 import time
 from typing import Any
 
-from aiohttp import ClientError
 import paho.mqtt.client as mqtt
 
 from homeassistant.core import HomeAssistant
@@ -164,10 +163,11 @@ class LeproApi:
         try:
             async with asyncio.timeout(REQUEST_TIMEOUT):
                 response = await self._session.get(url, headers=self._headers())
-                response.raise_for_status()
                 payload = await response.json(content_type=None)
-        except (ClientError, OSError, TimeoutError, ValueError) as err:
+        except (OSError, TimeoutError, ValueError) as err:
             raise LeproApiError("Unable to download Lepro product configuration") from err
+        if response.status >= 400:
+            raise LeproApiError("Unable to download Lepro product configuration")
         if not isinstance(payload, list):
             raise LeproApiError("Lepro product configuration is invalid")
         return [item for item in payload if isinstance(item, dict)]
