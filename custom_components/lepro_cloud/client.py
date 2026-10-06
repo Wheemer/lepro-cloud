@@ -157,6 +157,20 @@ class LeproApi:
                     devices[str(did)] = device
         return list(devices.values())
 
+    async def async_product_configs(self) -> list[dict[str, Any]]:
+        """Download the app's public product-to-effect mapping."""
+        url = f"https://{self._host}/pub/resources/config.series.json"
+        try:
+            async with asyncio.timeout(REQUEST_TIMEOUT):
+                response = await self._session.get(url, headers=self._headers())
+                response.raise_for_status()
+                payload = await response.json(content_type=None)
+        except (OSError, TimeoutError, ValueError) as err:
+            raise LeproApiError("Unable to download Lepro product configuration") from err
+        if not isinstance(payload, list):
+            raise LeproApiError("Lepro product configuration is invalid")
+        return [item for item in payload if isinstance(item, dict)]
+
     async def async_text(self, url: str) -> str:
         """Download text content from a profile-provided URL."""
         try:
@@ -183,6 +197,7 @@ class LeproCoordinator:
         self.entry = entry
         self.api = LeproApi(hass, entry.data["region"])
         self.devices: dict[str, dict[str, Any]] = {}
+        self.effect_types: dict[str, str] = {}
         self.states: dict[str, dict[str, Any]] = {}
         self.listeners: set[Callable[[str], None]] = set()
         self.client: mqtt.Client | None = None
@@ -198,6 +213,16 @@ class LeproCoordinator:
             self.api.async_devices(),
         )
         self.devices = {str(device["did"]): device for device in devices if device.get("did")}
+        try:
+            configs = await self.api.async_product_configs()
+        except LeproApiError as err:
+            _LOGGER.debug("Unable to load Lepro effect configuration: %s", err)
+        else:
+            self.effect_types = {
+                str(item["series"]).upper(): str(item["effect"])
+                for item in configs
+                if item.get("series") and item.get("effect") not in (None, "", "null")
+            }
         info = _mqtt_info(profile)
         try:
             key = await self.hass.async_add_executor_job(load_mqtt_private_key)

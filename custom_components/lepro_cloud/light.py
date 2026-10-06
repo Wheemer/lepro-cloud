@@ -7,6 +7,7 @@ from typing import Any
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ATTR_COLOR_TEMP_KELVIN,
+    ATTR_EFFECT,
     ATTR_HS_COLOR,
     ColorMode,
     LightEntity,
@@ -31,6 +32,7 @@ from .protocol import (
     WORK_MODE_WHITE,
     brightness_payload,
     color_payload,
+    ha_to_lepro_brightness,
     lepro_to_ha_brightness,
     lepro_hsv_to_hs,
     lepro_temperature_to_kelvin,
@@ -146,6 +148,53 @@ class LeproCloudLight(LightEntity):
         return ColorMode.BRIGHTNESS
 
     @property
+    def effect_list(self) -> list[str] | None:
+        """Return the device-specific scenes supplied by Lepro Cloud."""
+        effects = self._scene_effects
+        return list(effects) or None
+
+    @property
+    def effect(self) -> str | None:
+        """Return the selected scene when its exact payload is reported."""
+        for name, (datapoint, value) in self._scene_effects.items():
+            if self.coordinator.states.get(self.device_id, {}).get(datapoint) == value:
+                return name
+        return None
+
+    @property
+    def _scene_effects(self) -> dict[str, tuple[str, str]]:
+        """Map app-provided scene names to their verified MQTT payloads."""
+        series = str(self.device.get("series") or self.device.get("pid") or "").upper()
+        effect_type = self.coordinator.effect_types.get(series) or self.device.get("effect")
+        if not isinstance(effect_type, str):
+            return {}
+        effects: dict[str, tuple[str, str]] = {}
+        scenes = self.device.get("scenes")
+        if not isinstance(scenes, list):
+            return effects
+        for index, scene in enumerate(scenes, start=1):
+            if not isinstance(scene, dict):
+                continue
+            effect = scene.get(effect_type)
+            if not isinstance(effect, dict):
+                continue
+            datapoint = effect.get("dp") or effect.get("command_type")
+            value = effect.get("res")
+            if datapoint not in ("d6", "d50") or not isinstance(value, str) or not value:
+                continue
+            name = scene.get("scene") or effect.get("scene") or scene.get("groupName")
+            if not isinstance(name, str) or not name.strip():
+                name = f"Scene {scene.get('cid', index)}"
+            base_name = name.strip()
+            name = base_name
+            suffix = 2
+            while name in effects:
+                name = f"{base_name} {suffix}"
+                suffix += 1
+            effects[name] = (datapoint, value)
+        return effects
+
+    @property
     def hs_color(self) -> tuple[float, float] | None:
         """Return HS color from Lepro d5."""
         return lepro_hsv_to_hs(
@@ -173,7 +222,16 @@ class LeproCloudLight(LightEntity):
         """Turn the light on."""
         values: dict[str, Any] = on_payload(True)
         brightness = kwargs.get(ATTR_BRIGHTNESS, self.brightness or 255)
-        if ATTR_HS_COLOR in kwargs:
+        if ATTR_EFFECT in kwargs and kwargs[ATTR_EFFECT] in self._scene_effects:
+            datapoint, value = self._scene_effects[kwargs[ATTR_EFFECT]]
+            values.update(
+                {
+                    DP_WORK_MODE: 2,
+                    datapoint: value,
+                    self._brightness_datapoint: ha_to_lepro_brightness(brightness),
+                }
+            )
+        elif ATTR_HS_COLOR in kwargs:
             values.update(color_payload(kwargs[ATTR_HS_COLOR], brightness))
         elif ATTR_COLOR_TEMP_KELVIN in kwargs:
             values.update(white_payload(brightness, kwargs[ATTR_COLOR_TEMP_KELVIN]))

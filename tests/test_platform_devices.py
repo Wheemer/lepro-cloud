@@ -20,6 +20,7 @@ def _install_platform_import_stubs() -> None:
     light_component = types.ModuleType("homeassistant.components.light")
     light_component.ATTR_BRIGHTNESS = "brightness"
     light_component.ATTR_COLOR_TEMP_KELVIN = "color_temp_kelvin"
+    light_component.ATTR_EFFECT = "effect"
     light_component.ATTR_HS_COLOR = "hs_color"
     light_component.ColorMode = types.SimpleNamespace(
         BRIGHTNESS="brightness", COLOR_TEMP="color_temp", HS="hs"
@@ -117,6 +118,7 @@ class FakeCoordinator:
             "legacy-1": {"did": "legacy-1", "name": "Unknown"},
         }
         self.states: dict[str, dict[str, Any]] = {}
+        self.effect_types: dict[str, str] = {}
         self.connected = True
         self.commands: list[tuple[str, dict[str, Any]]] = []
         self.listeners: list[Callable[[str], None]] = []
@@ -279,6 +281,43 @@ def test_light_turn_on_honors_brightness_color_temp_and_hs_color() -> None:
         "light-1",
         {"d1": 1, "d2": 1, "d3": 1000, "d5": "007801f403e8"},
     )
+
+
+def test_light_uses_app_supplied_scenes_as_effects() -> None:
+    light = _load_module("light")
+    coordinator = FakeCoordinator()
+    device = coordinator.devices["light-1"]
+    device.update(
+        {
+            "series": "S1-10",
+            "scenes": [
+                {
+                    "scene": "Aurora",
+                    "striplight": {
+                        "dp": "d50",
+                        "res": "N01:P10001FF9700F2100010054R6U200020054V2000640000E1;",
+                    },
+                }
+            ],
+        }
+    )
+    coordinator.effect_types = {"S1-10": "striplight"}
+    coordinator.states["light-1"] = {"d52": 500}
+    entity = light.LeproCloudLight(coordinator, "light-1", device)
+    entity.hass = FakeHass()
+
+    assert entity.effect_list == ["Aurora"]
+    asyncio.run(entity.async_turn_on(effect="Aurora"))
+    assert coordinator.commands[-1] == (
+        "light-1",
+        {
+            "d1": 1,
+            "d2": 2,
+            "d50": "N01:P10001FF9700F2100010054R6U200020054V2000640000E1;",
+            "d52": 502,
+        },
+    )
+    assert entity.effect == "Aurora"
 
 
 def test_rgbic_light_uses_its_own_brightness_datapoint() -> None:
