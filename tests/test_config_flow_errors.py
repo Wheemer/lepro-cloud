@@ -214,21 +214,14 @@ def test_initial_schema_asks_for_credentials_only() -> None:
     assert fields == {"username": None, "password": None}
 
 
-def test_reconfigure_schema_offers_the_current_region_as_an_override() -> None:
+def test_reconfigure_schema_prefills_username_only() -> None:
     module = _load_config_flow_module()
 
-    schema = module._credentials_schema(username="user@example.com", region="far_east")
+    schema = module._credentials_schema(username="user@example.com")
     fields = {field.key: field.default for field in schema}
     assert fields == {
         "username": "user@example.com",
         "password": None,
-        "region": "far_east",
-    }
-    region_field = next(field for field in schema if field.key == "region")
-    assert schema[region_field] == {
-        "north_america": "North America",
-        "europe": "Europe",
-        "far_east": "Far East",
     }
 
 
@@ -267,7 +260,7 @@ def test_initial_setup_resolves_account_region_before_login(monkeypatch: Any) ->
     }
 
 
-def test_reconfigure_form_prefills_username_and_current_region() -> None:
+def test_reconfigure_form_prefills_username_only() -> None:
     module = _load_config_flow_module()
     entry = _entry(
         entry_id="one",
@@ -288,11 +281,10 @@ def test_reconfigure_form_prefills_username_and_current_region() -> None:
     assert fields == {
         "username": "user@example.com",
         "password": None,
-        "region": "europe",
     }
 
 
-def test_reconfigure_allows_manual_region_override_and_reloads_existing_entry(
+def test_reconfigure_resolves_account_region_and_reloads_existing_entry(
     monkeypatch: Any,
 ) -> None:
     module = _load_config_flow_module()
@@ -306,6 +298,11 @@ def test_reconfigure_allows_manual_region_override_and_reloads_existing_entry(
     flow = module.LeproCloudFlow()
     flow.hass = types.SimpleNamespace(config_entries=config_entries)
 
+    async def account_region(hass: Any, username: str) -> str:
+        assert hass is flow.hass
+        assert username == "new@example.com"
+        return "europe"
+
     class Api:
         def __init__(self, hass: Any, region: str) -> None:
             assert hass is flow.hass
@@ -315,6 +312,7 @@ def test_reconfigure_allows_manual_region_override_and_reloads_existing_entry(
             assert username == "new@example.com"
             assert password == "new-password"
 
+    monkeypatch.setattr(module, "_async_account_region", account_region)
     monkeypatch.setattr(module, "LeproApi", Api)
 
     result = asyncio.run(
@@ -322,7 +320,6 @@ def test_reconfigure_allows_manual_region_override_and_reloads_existing_entry(
             {
                 "username": " new@example.com ",
                 "password": " new-password ",
-                "region": "europe",
             }
         )
     )
@@ -360,6 +357,10 @@ def test_reconfigure_rejects_duplicate_other_entry_after_login(
         config_entries=_ConfigEntries([entry, duplicate], reconfigure_entry=entry)
     )
 
+    async def account_region(_hass: Any, username: str) -> str:
+        assert username == "TWO@example.com"
+        return "europe"
+
     class Api:
         def __init__(self, _hass: Any, region: str) -> None:
             assert region == "europe"
@@ -367,6 +368,7 @@ def test_reconfigure_rejects_duplicate_other_entry_after_login(
         async def async_login(self, _username: str, _password: str) -> None:
             pass
 
+    monkeypatch.setattr(module, "_async_account_region", account_region)
     monkeypatch.setattr(module, "LeproApi", Api)
 
     result = asyncio.run(
@@ -374,7 +376,6 @@ def test_reconfigure_rejects_duplicate_other_entry_after_login(
             {
                 "username": " TWO@example.com ",
                 "password": " new-password ",
-                "region": "europe",
             }
         )
     )

@@ -11,11 +11,10 @@
       },
       "reconfigure": {
         "title": "Update Lepro Cloud",
-        "description": "Update your Lepro Home account credentials or change the selected region if it is incorrect.",
+        "description": "Update your Lepro Home account credentials. Lepro selects the account's regional server automatically.",
         "data": {
           "username": "Email or phone",
-          "password": "Password",
-          "region": "Region"
+          "password": "Password"
         }
       }
     },
