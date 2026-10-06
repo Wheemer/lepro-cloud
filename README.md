@@ -4,16 +4,17 @@
 
 # Lepro Cloud for Home Assistant
 
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://www.hacs.xyz/docs/faq/custom_repositories/)
-![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.6%2B-41BDF5.svg)
-![Platforms](https://img.shields.io/badge/platforms-light%20%7C%20switch-22C55E.svg)
+<p align="center">
+  <a href="https://www.hacs.xyz/docs/faq/custom_repositories/"><img src="https://img.shields.io/badge/HACS-CUSTOM-41BDF5?style=for-the-badge&logo=home-assistant&logoColor=white&labelColor=555555" alt="HACS Custom"></a>
+  <a href="https://www.home-assistant.io/"><img src="https://img.shields.io/badge/HOME%20ASSISTANT-2024.6%2B-41BDF5?style=for-the-badge&logo=home-assistant&logoColor=white&labelColor=555555" alt="Home Assistant 2024.6 or newer"></a>
+  <img src="https://img.shields.io/badge/PLATFORMS-LIGHT%20%7C%20PLUG-22C55E?style=for-the-badge&logo=home-assistant&logoColor=white&labelColor=555555" alt="Light and plug platforms">
+</p>
 
 Private clean-room Home Assistant custom integration for Lepro Wi-Fi cloud devices.
 
 This repository is a private server-side integration derived from the user's supplied
 Lepro APK evidence and is not for public redistribution or release.
 
-Repository documentation: <https://github.com/Wheemer/lepro-cloud>
 
 Brand assets: user-supplied Lepro wordmark and a launcher icon extracted from the supplied Lepro Home APK.
 Lepro trademarks, names, logos, icons, product artwork, and any other Lepro-owned
@@ -23,12 +24,9 @@ this private repository.
 ## Scope
 
 - Uses Lepro Cloud REST APIs and Lepro MQTT over TLS.
-- Does not use Bluetooth.
-- Does not use a local network protocol.
 - Exposes verified Wi-Fi type `1` devices as Home Assistant lights with on/off and brightness.
 - Exposes verified Wi-Fi type `2` devices as Home Assistant switches using the shared `d1` switch datapoint.
 - Discovers Wi-Fi type `3` cameras but does not expose a `CameraEntity`; camera media transport is unsupported until the streaming protocol is verified.
-- Omits RGB, effects, scenes, color temperature, energy telemetry, and camera media until those payloads and transports are fully verified.
 
 ## Current Support
 
@@ -62,13 +60,6 @@ this private repository.
 - Basic light datapoints:
   - `d3`: brightness, Lepro scale `1..1000`
   - `d2`: work mode included with brightness commands as observed in the app model
-
-## Roadmap
-
-- Verify additional light datapoints for color temperature, RGB, scenes, and effects before exposing them.
-- Verify plug telemetry datapoints before adding sensor entities.
-- Verify camera authentication, signaling, and media transport before considering any Home Assistant camera platform.
-- Keep private MQTT client key material outside git and outside distributable archives.
 
 ## MQTT Key Note
 
