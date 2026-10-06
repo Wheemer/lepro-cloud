@@ -58,11 +58,11 @@ def _load_client_module() -> Any:
 
 
 class FakeResponse:
-    def __init__(self, payload: dict[str, Any], status: int = 200) -> None:
+    def __init__(self, payload: Any, status: int = 200) -> None:
         self._payload = payload
         self.status = status
 
-    async def json(self, **_kwargs: Any) -> dict[str, Any]:
+    async def json(self, **_kwargs: Any) -> Any:
         return self._payload
 
 
@@ -80,6 +80,14 @@ class RecordingSession:
     ) -> FakeResponse:
         self.requests.append(
             {"method": method, "url": url, "data": data, "headers": headers}
+        )
+        return self.responses.pop(0)
+
+    async def get(
+        self, url: str, headers: dict[str, str] | None = None
+    ) -> FakeResponse:
+        self.requests.append(
+            {"method": "GET", "url": url, "data": None, "headers": headers}
         )
         return self.responses.pop(0)
 
@@ -152,3 +160,18 @@ def test_login_application_error_is_response_error(monkeypatch: Any) -> None:
         pass
     else:
         raise AssertionError("expected LeproResponseError")
+
+
+def test_product_config_http_failure_becomes_nonfatal_api_error() -> None:
+    client_module = _load_client_module()
+    session = RecordingSession([FakeResponse({"message": "unavailable"}, status=503)])
+    api = _api(client_module, session)
+
+    try:
+        asyncio.run(api.async_product_configs())
+    except client_module.LeproApiError:
+        pass
+    else:
+        raise AssertionError("expected LeproApiError")
+
+    assert session.requests[0]["url"].endswith("/pub/resources/config.series.json")
