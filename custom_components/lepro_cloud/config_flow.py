@@ -21,21 +21,13 @@ from .const import CONF_REGION, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-REGION_CHOICES = {
-    "north_america": "North America",
-    "europe": "Europe",
-    "far_east": "Far East",
-}
-
 
 def _account_unique_id(region: str, username: str) -> str:
     """Return the stable unique ID for a Lepro Cloud account."""
     return f"{region}:{username.lower()}"
 
 
-def _credentials_schema(
-    *, username: str | None = None, region: str | None = None
-) -> vol.Schema:
+def _credentials_schema(*, username: str | None = None) -> vol.Schema:
     """Return the Lepro Cloud credentials form schema."""
     username_field = (
         vol.Required(CONF_USERNAME, default=username)
@@ -46,8 +38,6 @@ def _credentials_schema(
         username_field: str,
         vol.Required(CONF_PASSWORD): str,
     }
-    if region is not None:
-        fields[vol.Required(CONF_REGION, default=region)] = vol.In(REGION_CHOICES)
     return vol.Schema(fields)
 
 
@@ -123,9 +113,8 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             username = user_input[CONF_USERNAME].strip()
             password = user_input[CONF_PASSWORD].strip()
-            region = user_input[CONF_REGION].strip()
-
             try:
+                region = await _async_account_region(self.hass, username)
                 await LeproApi(self.hass, region).async_login(username, password)
             except LeproApiError as err:
                 _log_api_error(err)
@@ -152,9 +141,6 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=_credentials_schema(
-                username=entry.data[CONF_USERNAME],
-                region=entry.data.get(CONF_REGION, "north_america"),
-            ),
+            data_schema=_credentials_schema(username=entry.data[CONF_USERNAME]),
             errors=errors,
         )
