@@ -14,10 +14,7 @@
 Home Assistant custom integration for Lepro Wi-Fi cloud devices.
 
 
-Brand assets: user-supplied Lepro wordmark and a launcher icon extracted from the supplied Lepro Home APK.
-Lepro trademarks, names, logos, icons, product artwork, and any other Lepro-owned
-assets remain the property of their respective owners and are included only in
-this private repository.
+Lepro names, logos, icons, and product artwork are trademarks of their respective owners.
 
 ## Current Support
 
@@ -51,11 +48,11 @@ Auto-Toggle Lights as configuration entities.
 - RGBIC datapoints: `d50` scene, `d52` brightness, and `d53` strip length where used.
 - P1 plug settings: `d100` Power Memory, `d101` Indicator Light, and `d102` Button Lock.
 
-## MQTT Key Note
+## MQTT TLS Key
 
-The Android app stores the login response `secret` as the Lepro IoT secret and uses a native `getMqttPrivateKey()` method when writing `private_key.key`. This private integration follows that path: the static app client private key is loaded from a private, gitignored runtime asset, while the login response `secret` is passed separately as the TLS private-key password where Paho supports it. The profile continues to provide the MQTT root CA, client certificate, host, and port.
-
-Place the private APK-derived client key at `custom_components/lepro_cloud/_private/mqtt_client_key.pem`, `.lepro_private/mqtt_client_key.pem`, or point `LEPRO_MQTT_CLIENT_KEY_FILE` at the private file on the Home Assistant server. Do not commit or redistribute that key.
+Place the required client key at `custom_components/lepro_cloud/_private/mqtt_client_key.pem`,
+`.lepro_private/mqtt_client_key.pem`, or set `LEPRO_MQTT_CLIENT_KEY_FILE` to its location.
+Keep this credential out of source control.
 
 ## Installation
 
@@ -70,5 +67,4 @@ python3 -m pytest
 python3 -m compileall custom_components/lepro_cloud/*.py tests
 ```
 
-See [DEVELOPMENT.md](DEVELOPMENT.md) for maintainer workflow notes and
-[SECURITY.md](SECURITY.md) for private credential and asset handling guidance.
+See [DEVELOPMENT.md](DEVELOPMENT.md) for maintainer workflow notes.
