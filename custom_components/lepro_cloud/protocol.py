@@ -57,6 +57,8 @@ BULB_STATE_DATAPOINTS = (
 )
 RGBIC_STATE_DATAPOINTS = BULB_STATE_DATAPOINTS + ("d50", DP_RGBIC_BRIGHTNESS)
 RGBIC_LENGTH_STATE_DATAPOINTS = RGBIC_STATE_DATAPOINTS + ("d53",)
+# STV1 uses normal RGBIC state plus two user-configurable TV-strip settings.
+STV_STATE_DATAPOINTS = RGBIC_STATE_DATAPOINTS + ("d157", "d172")
 # P1 has two APK query paths: the plug UI requests d1/d100/d101/d102,
 # while the MQTT connection pool also requests d4/d5. Query their union.
 PLUG_STATE_DATAPOINTS = (DP_ONLINE, DP_ON, "d100", "d101", "d102", "d4", "d5")
@@ -86,6 +88,8 @@ def state_datapoints_for_series(series: Any) -> tuple[str, ...]:
         return PLUG_STATE_DATAPOINTS
     if name in RGBIC_LENGTH_SERIES:
         return RGBIC_LENGTH_STATE_DATAPOINTS
+    if name == "STV1":
+        return STV_STATE_DATAPOINTS
     if name in RGBIC_SERIES:
         return RGBIC_STATE_DATAPOINTS
     return BULB_STATE_DATAPOINTS

@@ -230,6 +230,24 @@ def test_p1_plug_exposes_and_controls_its_button_lock() -> None:
     assert lock.is_on is False
 
 
+def test_stv1_exposes_verified_status_and_auto_toggle_switches() -> None:
+    switch = _load_module("switch")
+    coordinator = FakeCoordinator()
+    device = {"did": "stv-1", "type": 1, "series": "STV1", "name": "TV Strip"}
+    coordinator.devices["stv-1"] = device
+    coordinator.states["stv-1"] = {"online": 1, "d157": 1, "d172": 0}
+    entry = types.SimpleNamespace(runtime_data=coordinator)
+    entities: list[Any] = []
+    asyncio.run(switch.async_setup_entry(FakeHass(), entry, lambda added: entities.extend(added)))
+    settings = [entity for entity in entities if entity.device_id == "stv-1"]
+    assert [entity._attr_name for entity in settings] == ["Status LED", "Auto-Toggle Lights"]
+    assert settings[0].is_on is True
+    assert settings[1].is_on is False
+    settings[1].hass = FakeHass()
+    asyncio.run(settings[1].async_turn_on())
+    assert coordinator.commands[-1] == ("stv-1", {"d172": 1})
+
+
 def test_light_reports_modes_from_state_datapoints() -> None:
     light = _load_module("light")
     coordinator = FakeCoordinator()

@@ -1,4 +1,4 @@
-"""Switch platform for Lepro Cloud plugs."""
+"""Switch platform for Lepro Cloud plug and TV-strip settings."""
 
 from __future__ import annotations
 
@@ -29,6 +29,23 @@ async def async_setup_entry(
         entities.append(LeproCloudPlugSwitch(coordinator, did, device))
         if _has_lock_switch(device):
             entities.append(LeproCloudPlugLockSwitch(coordinator, did, device))
+    for did, device in coordinator.devices.items():
+        if _is_stv(device):
+            entities.extend(
+                (
+                    LeproCloudStvSettingSwitch(
+                        coordinator, did, device, "d157", "Status LED", "status_led"
+                    ),
+                    LeproCloudStvSettingSwitch(
+                        coordinator,
+                        did,
+                        device,
+                        "d172",
+                        "Auto-Toggle Lights",
+                        "auto_toggle",
+                    ),
+                )
+            )
     async_add_entities(entities)
 
 
@@ -145,3 +162,84 @@ def _has_lock_switch(device: dict[str, Any]) -> bool:
     """Return true only for P1 plugs, whose APK control is d102."""
     series = device.get("series") or device.get("pid")
     return str(series or "").upper() == "P1"
+
+
+class LeproCloudStvSettingSwitch(SwitchEntity):
+    """A verified STV1 TV-strip setting switch."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: LeproCoordinator,
+        device_id: str,
+        device: dict[str, Any],
+        datapoint: str,
+        name: str,
+        key: str,
+    ) -> None:
+        self.coordinator = coordinator
+        self.device_id = device_id
+        self.device = device
+        self._datapoint = datapoint
+        self._attr_name = name
+        self._attr_unique_id = f"{DOMAIN}_{device_id}_{key}"
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, device_id)},
+            "name": device_name(device, "Lepro TV Light Strip"),
+            "manufacturer": "Lepro",
+            "model": device.get("series") or device.get("pid") or "TV light strip",
+        }
+
+    async def async_added_to_hass(self) -> None:
+        """Register for MQTT state updates."""
+        self.async_on_remove(
+            self.coordinator.listen(
+                lambda did: self.async_write_ha_state()
+                if did == self.device_id
+                else None
+            )
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return whether the TV strip is available."""
+        state = self.coordinator.states.get(self.device_id, {})
+        if DP_ONLINE in state:
+            try:
+                return int(state[DP_ONLINE]) > 0
+            except (TypeError, ValueError):
+                return False
+        return self.coordinator.connected
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return the app-reported setting state."""
+        value = self.coordinator.states.get(self.device_id, {}).get(self._datapoint)
+        if value is None:
+            return None
+        try:
+            return int(value) > 0
+        except (TypeError, ValueError):
+            return None
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Enable the setting."""
+        await self._async_set(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Disable the setting."""
+        await self._async_set(False)
+
+    async def _async_set(self, enabled: bool) -> None:
+        values = {self._datapoint: 1 if enabled else 0}
+        await self.hass.async_add_executor_job(
+            self.coordinator.command, self.device_id, values
+        )
+        self.coordinator.states.setdefault(self.device_id, {}).update(values)
+        self.async_write_ha_state()
+
+
+def _is_stv(device: dict[str, Any]) -> bool:
+    """Return true for the APK's STV1 TV light strip."""
+    return str(device.get("series") or device.get("pid") or "").upper() == "STV1"
