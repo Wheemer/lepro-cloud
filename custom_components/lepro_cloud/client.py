@@ -177,7 +177,7 @@ class LeproApi:
             return []
         result = await self._request(
             "GET",
-            f"/v3/scene/list/fid/{fid}/did/{did}/cid/{cursor}/limit/100/"
+            f"/v3/scene/list/fid/{fid}/did/{did}/cid/{cursor}/limit/6/"
             f"timestamp/{_now_seconds()}",
         )
         return _as_list(result)

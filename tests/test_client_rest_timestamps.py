@@ -290,7 +290,7 @@ def test_device_scene_url_uses_the_app_scene_endpoint(monkeypatch: Any) -> None:
         api.async_device_scenes({"fid": "family-1", "did": "device-1"}, cursor=7)
     ) == []
     assert session.requests[0]["url"].endswith(
-        "/v3/scene/list/fid/family-1/did/device-1/cid/7/limit/100/"
+        "/v3/scene/list/fid/family-1/did/device-1/cid/7/limit/6/"
         "timestamp/1720000000"
     )
 
