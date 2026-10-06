@@ -1,21 +1,23 @@
 # Changelog
 
-All notable private repository changes are tracked here.
+All notable changes to Lepro Cloud are documented here.
 
-This project follows a simple maintainer changelog style inspired by
-`Wheemer/simple-thermostat`, adapted for a Python Home Assistant integration.
+## v0.1.4
 
-## Unreleased
+Lepro Cloud 0.1.4 adds Lepro Home saved effects to supported Wi-Fi lights.
 
-- Add maintainer-facing repository documentation for development, security, and
-  change tracking.
-- Add GitHub issue templates, Dependabot configuration, and pinned validation
-  workflows for Python tests, HACS integration validation, CodeQL, Scorecard,
-  and manual release-artifact verification.
-- Expand ignore rules for Python, Home Assistant runtime files, local secrets,
-  private Lepro MQTT material, APK-derived assets, and Codex scratch files.
+### Added
 
-## 0.2.0
+- App-provided scenes and saved favourite effects in the light Effect selector.
+- RGBIC strip, TV backlight, and multi-part table-lamp effect handling.
+
+### Improved
+
+- Effect brightness preserves the supplied colour payload.
+- Saved effects load across every page returned by Lepro.
+- Strip-light and legacy-scene selection follow the Lepro Home app fallback behavior.
+
+## v0.2.0
 
 - Keep the existing Lepro Cloud integration behavior, assets, and README usage
   documentation intact.
