@@ -115,16 +115,16 @@ def test_temperature_scale_maps_warm_to_cool_kelvin_range() -> None:
     assert lepro_temperature_to_kelvin("bad") is None
 
 
-def test_hsv_hex_parsing_requires_exact_lowercase_12_digit_payload() -> None:
+def test_hsv_hex_parsing_accepts_the_app_uppercase_wire_format() -> None:
     assert parse_lepro_hsv("000003e803e8") == (0, 1000, 1000)
     assert parse_lepro_hsv("03e803e803e8") == (1000, 1000, 1000)
-    assert parse_lepro_hsv("03E803e803e8") is None
+    assert parse_lepro_hsv("03E803e803e8") == (1000, 1000, 1000)
     assert parse_lepro_hsv("03e803e803e") is None
     assert parse_lepro_hsv("03e903e803e8") is None
 
 
 def test_hs_rgb_helpers_convert_lepro_hsv() -> None:
-    assert hs_to_lepro_hsv((120, 50), 250) == "007801f400fa"
+    assert hs_to_lepro_hsv((120, 50), 250) == "007801F400FA"
     assert lepro_hsv_to_hs("00b403e803e8") == (180.0, 100.0)
     assert lepro_hsv_to_rgb("000003e803e8") == (255, 0, 0)
     assert rgb_to_hs(0, 255, 0) == (120.0, 100.0)
@@ -134,7 +134,7 @@ def test_color_payload_uses_verified_datapoints() -> None:
     assert color_payload((240, 75), 128) == {
         DP_WORK_MODE: WORK_MODE_COLOR,
         DP_BRIGHTNESS: 502,
-        DP_COLOR: "00f002ee01f6",
+        DP_COLOR: "00F002EE01F6",
     }
 
 

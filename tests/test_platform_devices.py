@@ -279,7 +279,7 @@ def test_light_turn_on_honors_brightness_color_temp_and_hs_color() -> None:
     asyncio.run(entity.async_turn_on(hs_color=(120, 50), brightness=255))
     assert coordinator.commands[-1] == (
         "light-1",
-        {"d1": 1, "d2": 1, "d3": 1000, "d5": "007801f403e8"},
+        {"d1": 1, "d2": 1, "d3": 1000, "d5": "007801F403E8"},
     )
 
 

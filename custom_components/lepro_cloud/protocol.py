@@ -26,7 +26,7 @@ MAX_BRIGHTNESS = 1000
 MIN_HA_KELVIN = 2700
 MAX_HA_KELVIN = 6500
 MAX_COLOR_VALUE = 1000
-HSV_HEX_RE = re.compile(r"^[0-9a-f]{12}$")
+HSV_HEX_RE = re.compile(r"^[0-9a-f]{12}$", re.IGNORECASE)
 
 SUBSCRIBE_SUFFIXES = ("rpt", "getr", "setr")
 MQTT_TOPIC_PREFIX = "le"
@@ -179,7 +179,7 @@ def hs_to_lepro_hsv(hs_color: tuple[float, float], value: Any = MAX_COLOR_VALUE)
         round((max(0.0, min(100.0, float(saturation))) / 100) * MAX_COLOR_VALUE),
         max(0, min(MAX_COLOR_VALUE, int(value))),
     )
-    return "".join(f"{part:04x}" for part in hsv)
+    return "".join(f"{part:04X}" for part in hsv)
 
 
 def parse_lepro_hsv(value: Any) -> tuple[int, int, int] | None:
