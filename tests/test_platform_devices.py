@@ -259,3 +259,17 @@ def test_light_turn_on_honors_brightness_color_temp_and_hs_color() -> None:
         "light-1",
         {"d1": 1, "d2": 1, "d3": 1000, "d5": "007801f403e8"},
     )
+
+
+def test_rgbic_light_uses_its_own_brightness_datapoint() -> None:
+    light = _load_module("light")
+    coordinator = FakeCoordinator()
+    coordinator.states["light-1"] = {"d2": 2, "d52": 500}
+    entity = light.LeproCloudLight(
+        coordinator, "light-1", coordinator.devices["light-1"]
+    )
+    entity.hass = FakeHass()
+
+    assert entity.brightness == 128
+    asyncio.run(entity.async_turn_on(brightness=128))
+    assert coordinator.commands[-1] == ("light-1", {"d1": 1, "d2": 2, "d52": 502})

@@ -22,6 +22,7 @@ from .protocol import (
     DP_BRIGHTNESS,
     DP_COLOR,
     DP_ONLINE,
+    DP_RGBIC_BRIGHTNESS,
     DP_TEMPERATURE,
     DP_WORK_MODE,
     MAX_HA_KELVIN,
@@ -101,8 +102,24 @@ class LeproCloudLight(LightEntity):
     def brightness(self) -> int | None:
         """Return brightness in Home Assistant scale."""
         return lepro_to_ha_brightness(
-            self.coordinator.states.get(self.device_id, {}).get(DP_BRIGHTNESS)
+            self.coordinator.states.get(self.device_id, {}).get(self._brightness_datapoint)
         )
+
+    @property
+    def _brightness_datapoint(self) -> str:
+        """Select the reported brightness datapoint for this product family."""
+        state = self.coordinator.states.get(self.device_id, {})
+        if DP_RGBIC_BRIGHTNESS in state:
+            return DP_RGBIC_BRIGHTNESS
+        return DP_BRIGHTNESS
+
+    @property
+    def _work_mode(self) -> int:
+        """Return the active device work mode without inventing a mode."""
+        try:
+            return int(self.coordinator.states.get(self.device_id, {}).get(DP_WORK_MODE))
+        except (TypeError, ValueError):
+            return WORK_MODE_WHITE
 
     @property
     def supported_color_modes(self) -> set[ColorMode]:
@@ -119,10 +136,7 @@ class LeproCloudLight(LightEntity):
     def color_mode(self) -> ColorMode:
         """Return the active HA color mode from Lepro d2 work mode."""
         state = self.coordinator.states.get(self.device_id, {})
-        try:
-            work_mode = int(state.get(DP_WORK_MODE))
-        except (TypeError, ValueError):
-            work_mode = WORK_MODE_WHITE
+        work_mode = self._work_mode
 
         supported = self.supported_color_modes
         if work_mode == WORK_MODE_COLOR and ColorMode.HS in supported:
@@ -175,7 +189,13 @@ class LeproCloudLight(LightEntity):
                     white_payload(kwargs[ATTR_BRIGHTNESS], self.color_temp_kelvin)
                 )
             else:
-                values.update(brightness_payload(kwargs[ATTR_BRIGHTNESS]))
+                values.update(
+                    brightness_payload(
+                        kwargs[ATTR_BRIGHTNESS],
+                        datapoint=self._brightness_datapoint,
+                        work_mode=self._work_mode,
+                    )
+                )
         await self.hass.async_add_executor_job(
             self.coordinator.command, self.device_id, values
         )

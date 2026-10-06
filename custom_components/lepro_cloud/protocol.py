@@ -11,6 +11,7 @@ from uuid import uuid4
 DP_ON = "d1"
 DP_WORK_MODE = "d2"
 DP_BRIGHTNESS = "d3"
+DP_RGBIC_BRIGHTNESS = "d52"
 DP_TEMPERATURE = "d4"
 DP_COLOR = "d5"
 DP_ONLINE = "online"
@@ -84,9 +85,21 @@ def on_payload(is_on: bool) -> dict[str, int]:
     return {DP_ON: 1 if is_on else 0}
 
 
-def brightness_payload(ha_brightness: int) -> dict[str, int]:
-    """Build a brightness command using the verified d3 brightness datapoint."""
-    return {DP_WORK_MODE: WORK_MODE_WHITE, DP_BRIGHTNESS: ha_to_lepro_brightness(ha_brightness)}
+def brightness_payload(
+    ha_brightness: int,
+    *,
+    datapoint: str = DP_BRIGHTNESS,
+    work_mode: int = WORK_MODE_WHITE,
+) -> dict[str, int]:
+    """Build a brightness command for an ordinary or RGBIC light.
+
+    The Android app uses ``d3`` for conventional bulbs and ``d52`` for RGBIC
+    products. Both command formats carry the active work mode in ``d2``.
+    """
+    return {
+        DP_WORK_MODE: work_mode,
+        datapoint: ha_to_lepro_brightness(ha_brightness),
+    }
 
 
 def ha_to_lepro_brightness(ha_brightness: Any) -> int:

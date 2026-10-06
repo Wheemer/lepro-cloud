@@ -15,6 +15,7 @@ protocol = module_from_spec(_SPEC)
 _SPEC.loader.exec_module(protocol)
 
 DP_BRIGHTNESS = protocol.DP_BRIGHTNESS
+DP_RGBIC_BRIGHTNESS = protocol.DP_RGBIC_BRIGHTNESS
 DP_COLOR = protocol.DP_COLOR
 DP_ON = protocol.DP_ON
 DP_TEMPERATURE = protocol.DP_TEMPERATURE
@@ -81,6 +82,13 @@ def test_brightness_payload_uses_verified_datapoints() -> None:
 def test_brightness_payload_clamps() -> None:
     assert brightness_payload(-1)[DP_BRIGHTNESS] == 1
     assert brightness_payload(999)[DP_BRIGHTNESS] == 1000
+
+
+def test_rgbic_brightness_payload_preserves_the_active_mode() -> None:
+    assert brightness_payload(128, datapoint=DP_RGBIC_BRIGHTNESS, work_mode=2) == {
+        DP_WORK_MODE: 2,
+        DP_RGBIC_BRIGHTNESS: 502,
+    }
 
 
 def test_lepro_to_ha_brightness() -> None:
