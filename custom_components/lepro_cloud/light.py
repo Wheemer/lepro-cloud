@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.light import ATTR_BRIGHTNESS, ColorMode, LightEntity
+from homeassistant.components.light import (
+    ATTR_BRIGHTNESS,
+    ATTR_COLOR_TEMP_KELVIN,
+    ATTR_HS_COLOR,
+    ColorMode,
+    LightEntity,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -14,11 +20,22 @@ from .const import DOMAIN
 from .device import device_name, is_light
 from .protocol import (
     DP_BRIGHTNESS,
+    DP_COLOR,
     DP_ONLINE,
+    DP_TEMPERATURE,
+    DP_WORK_MODE,
+    MAX_HA_KELVIN,
+    MIN_HA_KELVIN,
+    WORK_MODE_COLOR,
+    WORK_MODE_WHITE,
     brightness_payload,
+    color_payload,
     lepro_to_ha_brightness,
+    lepro_hsv_to_hs,
+    lepro_temperature_to_kelvin,
     on_payload,
     state_is_on,
+    white_payload,
 )
 
 
@@ -41,8 +58,6 @@ class LeproCloudLight(LightEntity):
 
     _attr_has_entity_name = True
     _attr_name = None
-    _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
-    _attr_color_mode = ColorMode.BRIGHTNESS
 
     def __init__(
         self, coordinator: LeproCoordinator, device_id: str, device: dict[str, Any]
@@ -89,11 +104,78 @@ class LeproCloudLight(LightEntity):
             self.coordinator.states.get(self.device_id, {}).get(DP_BRIGHTNESS)
         )
 
+    @property
+    def supported_color_modes(self) -> set[ColorMode]:
+        """Return color modes supported by currently reported datapoints."""
+        state = self.coordinator.states.get(self.device_id, {})
+        modes = set()
+        if DP_COLOR in state:
+            modes.add(ColorMode.HS)
+        if DP_TEMPERATURE in state:
+            modes.add(ColorMode.COLOR_TEMP)
+        return modes or {ColorMode.BRIGHTNESS}
+
+    @property
+    def color_mode(self) -> ColorMode:
+        """Return the active HA color mode from Lepro d2 work mode."""
+        state = self.coordinator.states.get(self.device_id, {})
+        try:
+            work_mode = int(state.get(DP_WORK_MODE))
+        except (TypeError, ValueError):
+            work_mode = WORK_MODE_WHITE
+
+        supported = self.supported_color_modes
+        if work_mode == WORK_MODE_COLOR and ColorMode.HS in supported:
+            return ColorMode.HS
+        if work_mode == WORK_MODE_WHITE and ColorMode.COLOR_TEMP in supported:
+            return ColorMode.COLOR_TEMP
+        return ColorMode.BRIGHTNESS
+
+    @property
+    def hs_color(self) -> tuple[float, float] | None:
+        """Return HS color from Lepro d5."""
+        return lepro_hsv_to_hs(
+            self.coordinator.states.get(self.device_id, {}).get(DP_COLOR)
+        )
+
+    @property
+    def color_temp_kelvin(self) -> int | None:
+        """Return color temperature from Lepro d4."""
+        return lepro_temperature_to_kelvin(
+            self.coordinator.states.get(self.device_id, {}).get(DP_TEMPERATURE)
+        )
+
+    @property
+    def min_color_temp_kelvin(self) -> int:
+        """Return warmest supported white temperature."""
+        return MIN_HA_KELVIN
+
+    @property
+    def max_color_temp_kelvin(self) -> int:
+        """Return coolest supported white temperature."""
+        return MAX_HA_KELVIN
+
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the light on."""
         values: dict[str, Any] = on_payload(True)
-        if ATTR_BRIGHTNESS in kwargs:
-            values.update(brightness_payload(kwargs[ATTR_BRIGHTNESS]))
+        brightness = kwargs.get(ATTR_BRIGHTNESS, self.brightness or 255)
+        if ATTR_HS_COLOR in kwargs:
+            values.update(color_payload(kwargs[ATTR_HS_COLOR], brightness))
+        elif ATTR_COLOR_TEMP_KELVIN in kwargs:
+            values.update(white_payload(brightness, kwargs[ATTR_COLOR_TEMP_KELVIN]))
+        elif ATTR_BRIGHTNESS in kwargs:
+            # A brightness-only service call must not change the active colour mode.
+            if self.color_mode == ColorMode.HS and self.hs_color is not None:
+                values.update(color_payload(self.hs_color, kwargs[ATTR_BRIGHTNESS]))
+            elif (
+                self.color_mode == ColorMode.COLOR_TEMP
+                and self.color_temp_kelvin is not None
+            ):
+                values.update(
+                    white_payload(kwargs[ATTR_BRIGHTNESS], self.color_temp_kelvin)
+                )
+            else:
+                values.update(brightness_payload(kwargs[ATTR_BRIGHTNESS]))
         await self.hass.async_add_executor_job(
             self.coordinator.command, self.device_id, values
         )

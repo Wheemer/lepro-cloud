@@ -15,12 +15,23 @@ protocol = module_from_spec(_SPEC)
 _SPEC.loader.exec_module(protocol)
 
 DP_BRIGHTNESS = protocol.DP_BRIGHTNESS
+DP_COLOR = protocol.DP_COLOR
 DP_ON = protocol.DP_ON
+DP_TEMPERATURE = protocol.DP_TEMPERATURE
 DP_WORK_MODE = protocol.DP_WORK_MODE
+WORK_MODE_COLOR = protocol.WORK_MODE_COLOR
 WORK_MODE_WHITE = protocol.WORK_MODE_WHITE
 brightness_payload = protocol.brightness_payload
+color_payload = protocol.color_payload
+kelvin_to_lepro_temperature = protocol.kelvin_to_lepro_temperature
 lepro_to_ha_brightness = protocol.lepro_to_ha_brightness
+lepro_hsv_to_hs = protocol.lepro_hsv_to_hs
+lepro_hsv_to_rgb = protocol.lepro_hsv_to_rgb
+lepro_temperature_to_kelvin = protocol.lepro_temperature_to_kelvin
 on_payload = protocol.on_payload
+parse_lepro_hsv = protocol.parse_lepro_hsv
+rgb_to_hs = protocol.rgb_to_hs
+hs_to_lepro_hsv = protocol.hs_to_lepro_hsv
 state_is_on = protocol.state_is_on
 subscription_topics = protocol.subscription_topics
 topic_get = protocol.topic_get
@@ -45,6 +56,7 @@ def test_on_payload() -> None:
 def test_brightness_payload_uses_verified_datapoints() -> None:
     payload = brightness_payload(128)
     assert payload[DP_WORK_MODE] == WORK_MODE_WHITE
+    assert WORK_MODE_WHITE == 0
     assert payload[DP_BRIGHTNESS] == 502
     assert set(payload) == {DP_WORK_MODE, DP_BRIGHTNESS}
 
@@ -59,6 +71,41 @@ def test_lepro_to_ha_brightness() -> None:
     assert lepro_to_ha_brightness(1000) == 255
     assert lepro_to_ha_brightness("500") == 128
     assert lepro_to_ha_brightness("bad") is None
+
+
+def test_temperature_scale_is_reversed_kelvin_range() -> None:
+    assert kelvin_to_lepro_temperature(6500) == 0
+    assert kelvin_to_lepro_temperature(2700) == 1000
+    assert kelvin_to_lepro_temperature(4600) == 500
+    assert kelvin_to_lepro_temperature(9999) == 0
+    assert kelvin_to_lepro_temperature(1) == 1000
+    assert lepro_temperature_to_kelvin(0) == 6500
+    assert lepro_temperature_to_kelvin(1000) == 2700
+    assert lepro_temperature_to_kelvin("500") == 4600
+    assert lepro_temperature_to_kelvin("bad") is None
+
+
+def test_hsv_hex_parsing_requires_exact_lowercase_12_digit_payload() -> None:
+    assert parse_lepro_hsv("000003e803e8") == (0, 1000, 1000)
+    assert parse_lepro_hsv("03e803e803e8") == (1000, 1000, 1000)
+    assert parse_lepro_hsv("03E803e803e8") is None
+    assert parse_lepro_hsv("03e803e803e") is None
+    assert parse_lepro_hsv("03e903e803e8") is None
+
+
+def test_hs_rgb_helpers_convert_lepro_hsv() -> None:
+    assert hs_to_lepro_hsv((120, 50), 250) == "014d01f400fa"
+    assert lepro_hsv_to_hs("01f403e803e8") == (180.0, 100.0)
+    assert lepro_hsv_to_rgb("000003e803e8") == (255, 0, 0)
+    assert rgb_to_hs(0, 255, 0) == (120.0, 100.0)
+
+
+def test_color_payload_uses_verified_datapoints() -> None:
+    assert color_payload((240, 75), 128) == {
+        DP_WORK_MODE: WORK_MODE_COLOR,
+        DP_BRIGHTNESS: 502,
+        DP_COLOR: "029b02ee01f6",
+    }
 
 
 def test_state_is_on() -> None:

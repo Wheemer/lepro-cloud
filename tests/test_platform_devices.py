@@ -19,7 +19,11 @@ def _install_platform_import_stubs() -> None:
 
     light_component = types.ModuleType("homeassistant.components.light")
     light_component.ATTR_BRIGHTNESS = "brightness"
-    light_component.ColorMode = types.SimpleNamespace(BRIGHTNESS="brightness")
+    light_component.ATTR_COLOR_TEMP_KELVIN = "color_temp_kelvin"
+    light_component.ATTR_HS_COLOR = "hs_color"
+    light_component.ColorMode = types.SimpleNamespace(
+        BRIGHTNESS="brightness", COLOR_TEMP="color_temp", HS="hs"
+    )
     light_component.LightEntity = RecordingEntity
 
     switch_component = types.ModuleType("homeassistant.components.switch")
@@ -202,3 +206,56 @@ def test_plug_switch_uses_d1_state_command_and_availability() -> None:
 
     assert coordinator.commands[-1] == ("plug-1", {"d1": 0})
     assert entity.is_on is False
+
+
+def test_light_reports_modes_from_state_datapoints() -> None:
+    light = _load_module("light")
+    coordinator = FakeCoordinator()
+    entity = light.LeproCloudLight(
+        coordinator, "light-1", coordinator.devices["light-1"]
+    )
+
+    assert entity.supported_color_modes == {"brightness"}
+    assert entity.color_mode == "brightness"
+    assert entity.brightness is None
+
+    coordinator.states["light-1"] = {
+        "d2": 0,
+        "d3": 500,
+        "d4": 0,
+        "d5": "01f403e803e8",
+    }
+
+    assert entity.supported_color_modes == {"color_temp", "hs"}
+    assert entity.color_mode == "color_temp"
+    assert entity.brightness == 128
+    assert entity.color_temp_kelvin == 6500
+    assert entity.hs_color == (180.0, 100.0)
+
+    coordinator.states["light-1"]["d2"] = 1
+    assert entity.color_mode == "hs"
+
+
+def test_light_turn_on_honors_brightness_color_temp_and_hs_color() -> None:
+    light = _load_module("light")
+    coordinator = FakeCoordinator()
+    coordinator.states["light-1"] = {"d3": 64, "d4": 500, "d5": "000000000000"}
+    entity = light.LeproCloudLight(
+        coordinator, "light-1", coordinator.devices["light-1"]
+    )
+    entity.hass = FakeHass()
+
+    asyncio.run(entity.async_turn_on(brightness=128))
+    assert coordinator.commands[-1] == ("light-1", {"d1": 1, "d2": 0, "d3": 502, "d4": 500})
+
+    asyncio.run(entity.async_turn_on(color_temp_kelvin=2700))
+    assert coordinator.commands[-1] == (
+        "light-1",
+        {"d1": 1, "d2": 0, "d3": 502, "d4": 1000},
+    )
+
+    asyncio.run(entity.async_turn_on(hs_color=(120, 50), brightness=255))
+    assert coordinator.commands[-1] == (
+        "light-1",
+        {"d1": 1, "d2": 1, "d3": 1000, "d5": "014d01f403e8"},
+    )
