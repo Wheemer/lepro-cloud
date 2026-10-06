@@ -163,7 +163,7 @@ class LeproApi:
         return list(devices.values())
 
     async def async_device_scenes(
-        self, device: Mapping[str, Any]
+        self, device: Mapping[str, Any], cursor: int = 0
     ) -> list[dict[str, Any]]:
         """Return the saved and supplied scenes for one device.
 
@@ -177,7 +177,7 @@ class LeproApi:
             return []
         result = await self._request(
             "GET",
-            f"/v3/scene/list/fid/{fid}/did/{did}/cid/0/limit/100/"
+            f"/v3/scene/list/fid/{fid}/did/{did}/cid/{cursor}/limit/100/"
             f"timestamp/{_now_seconds()}",
         )
         return _as_list(result)
@@ -263,7 +263,7 @@ class LeproCoordinator:
         """Load app scenes without making device discovery unavailable."""
         device_items = list(self.devices.items())
         results = await asyncio.gather(
-            *(self.api.async_device_scenes(device) for _, device in device_items),
+            *(self._async_device_scenes(device) for _, device in device_items),
             return_exceptions=True,
         )
         for (did, device), result in zip(device_items, results, strict=True):
@@ -271,6 +271,29 @@ class LeproCoordinator:
                 _LOGGER.debug("Unable to load Lepro scenes for %s: %s", did, result)
                 continue
             device["scenes"] = result
+
+    async def _async_device_scenes(
+        self, device: Mapping[str, Any]
+    ) -> list[dict[str, Any]]:
+        """Collect every page of device saved scenes using the app cursor."""
+        scenes: list[dict[str, Any]] = []
+        cursor = 0
+        for _ in range(100):
+            page = await self.api.async_device_scenes(device, cursor=cursor)
+            if not page:
+                break
+            scenes.extend(page)
+            cursors = [
+                int(scene["cid"])
+                for scene in page
+                if isinstance(scene.get("cid"), int | str)
+                and str(scene["cid"]).isdigit()
+            ]
+            next_cursor = max(cursors, default=cursor)
+            if next_cursor <= cursor:
+                break
+            cursor = next_cursor
+        return scenes
 
     async def _resolve_certs(
         self, info: Mapping[str, Any], key: str, key_password: str

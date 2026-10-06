@@ -287,9 +287,29 @@ def test_device_scene_url_uses_the_app_scene_endpoint(monkeypatch: Any) -> None:
     api = _api(client_module, session)
 
     assert asyncio.run(
-        api.async_device_scenes({"fid": "family-1", "did": "device-1"})
+        api.async_device_scenes({"fid": "family-1", "did": "device-1"}, cursor=7)
     ) == []
     assert session.requests[0]["url"].endswith(
-        "/v3/scene/list/fid/family-1/did/device-1/cid/0/limit/100/"
+        "/v3/scene/list/fid/family-1/did/device-1/cid/7/limit/100/"
         "timestamp/1720000000"
     )
+
+
+def test_device_scene_loader_follows_the_app_cursor() -> None:
+    client_module = _load_client_module()
+    calls: list[int] = []
+    pages = {
+        0: [{"cid": 1}, {"cid": 2}],
+        2: [{"cid": 3}],
+        3: [],
+    }
+
+    async def async_device_scenes(_device: Any, *, cursor: int = 0) -> list[dict[str, int]]:
+        calls.append(cursor)
+        return pages[cursor]
+
+    coordinator = client_module.LeproCoordinator.__new__(client_module.LeproCoordinator)
+    coordinator.api = types.SimpleNamespace(async_device_scenes=async_device_scenes)
+    coordinator.devices = {"device-1": {"did": "device-1"}}
+
+    asyncio.run(coordinator._load_device_scenes())
