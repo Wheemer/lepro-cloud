@@ -3,31 +3,29 @@
     "step": {
       "user": {
         "title": "Lepro Cloud",
-        "description": "Connect to Lepro Cloud over Wi-Fi. Bluetooth and local LAN control are not used.",
+        "description": "Sign in with your Lepro Home account. The Lepro Cloud region is selected from this Home Assistant server's location.",
         "data": {
           "username": "Email or phone",
-          "password": "Password",
-          "region": "Region"
+          "password": "Password"
         }
       },
       "reconfigure": {
         "title": "Update Lepro Cloud",
-        "description": "Update the Lepro Cloud account credentials and region.",
+        "description": "Update your Lepro Home account credentials. The Lepro Cloud region is selected from this Home Assistant server's location.",
         "data": {
           "username": "Email or phone",
-          "password": "Password",
-          "region": "Region"
+          "password": "Password"
         }
       }
     },
     "error": {
-      "already_configured": "This Lepro Cloud account and region are already configured.",
+      "already_configured": "This Lepro Cloud account is already configured.",
       "cannot_connect": "Could not connect to Lepro Cloud.",
       "invalid_auth": "Invalid Lepro Cloud credentials.",
       "invalid_response": "Lepro Cloud rejected the login request."
     },
     "abort": {
-      "already_configured": "This Lepro Cloud account and region are already configured.",
+      "already_configured": "This Lepro Cloud account is already configured.",
       "reconfigure_successful": "Lepro Cloud configuration updated."
     }
   }
