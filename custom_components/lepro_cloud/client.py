@@ -326,8 +326,9 @@ class LeproCoordinator:
             await self.hass.async_add_executor_job(client.disconnect)
             await self.hass.async_add_executor_job(client.loop_stop)
         if self.tmp:
-            self.tmp.cleanup()
+            tmp = self.tmp
             self.tmp = None
+            await self.hass.async_add_executor_job(tmp.cleanup)
 
 
 def _mqtt_info(profile: Mapping[str, Any]) -> dict[str, Any]:
