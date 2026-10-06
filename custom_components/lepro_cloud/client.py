@@ -22,6 +22,7 @@ from .mqtt_key import MqttKeyError, load_mqtt_private_key
 from .protocol import (
     make_get_payload,
     make_set_payload,
+    state_datapoints_for_series,
     subscription_topics,
     topic_get,
     topic_set,
@@ -267,10 +268,15 @@ class LeproCoordinator:
             self.connected = False
             return
         self.connected = True
-        for did in self.devices:
+        for did, device in self.devices.items():
             for topic in subscription_topics(did):
                 client.subscribe(topic, qos=1)
-            client.publish(topic_get(did), json.dumps(make_get_payload()), qos=1)
+            series = device.get("series") or device.get("pid")
+            client.publish(
+                topic_get(did),
+                json.dumps(make_get_payload(state_datapoints_for_series(series))),
+                qos=1,
+            )
 
     def _on_disconnect(
         self,

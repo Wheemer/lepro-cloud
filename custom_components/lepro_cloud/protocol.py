@@ -31,6 +31,34 @@ HSV_HEX_RE = re.compile(r"^[0-9a-f]{12}$")
 SUBSCRIBE_SUFFIXES = ("rpt", "getr", "setr")
 MQTT_TOPIC_PREFIX = "le"
 
+# Product-series state lists observed in MqttConnectionPool in the Android app.
+RGBIC_SERIES = frozenset(
+    {
+        "N1-3", "N1-5", "N1-6", "N1-10", "N1-PRO-3", "N1-PRO-6", "N1-PRO-10",
+        "T1", "S1-5", "S1-10", "S1-15", "S1-20", "S1-30", "S1-PRO-5",
+        "S1-PRO-10", "S1-PRO-15", "S1-PRO-20", "S1-PRO-30", "STV1", "ZB1", "PG1",
+    }
+)
+RGBIC_LENGTH_SERIES = frozenset(
+    {
+        "WL1", "E1-30", "E1-60", "E1-90", "E1-Plus-30", "E1-Plus-60",
+        "E1-Plus-90", "E1-Plus-120", "E1-Plus-180", "EE1-30", "EE1-60", "EE1-90",
+        "EE1-120", "EE1-180", "S2-5", "S2-10", "S2-15", "S2-20", "S2-30",
+        "SW1-5", "SW1-6", "SW1-10", "SW1-15", "SW1-20", "SW1-30",
+    }
+)
+BULB_STATE_DATAPOINTS = (
+    DP_ONLINE,
+    DP_ON,
+    DP_WORK_MODE,
+    DP_BRIGHTNESS,
+    DP_TEMPERATURE,
+    DP_COLOR,
+)
+RGBIC_STATE_DATAPOINTS = BULB_STATE_DATAPOINTS + ("d50", DP_RGBIC_BRIGHTNESS)
+RGBIC_LENGTH_STATE_DATAPOINTS = RGBIC_STATE_DATAPOINTS + ("d53",)
+PLUG_STATE_DATAPOINTS = (DP_ONLINE, DP_ON, "d100", "d101", "d102")
+
 
 def topic_get(device_id: str) -> str:
     """Return the Lepro property-get topic for a device."""
@@ -49,9 +77,21 @@ def subscription_topics(device_id: str) -> tuple[str, ...]:
     )
 
 
-def make_get_payload() -> dict[str, Any]:
-    """Build a safe state request payload."""
-    return {"id": uuid4().hex, "d": {}}
+def state_datapoints_for_series(series: Any) -> tuple[str, ...]:
+    """Return the APK's MQTT state query list for a product series."""
+    name = str(series or "").upper()
+    if name == "P1":
+        return PLUG_STATE_DATAPOINTS
+    if name in RGBIC_LENGTH_SERIES:
+        return RGBIC_LENGTH_STATE_DATAPOINTS
+    if name in RGBIC_SERIES:
+        return RGBIC_STATE_DATAPOINTS
+    return BULB_STATE_DATAPOINTS
+
+
+def make_get_payload(datapoints: tuple[str, ...] = BULB_STATE_DATAPOINTS) -> dict[str, Any]:
+    """Build the product-specific state request used by the Android app."""
+    return {"id": uuid4().hex, "d": list(datapoints)}
 
 
 

@@ -34,6 +34,7 @@ parse_lepro_hsv = protocol.parse_lepro_hsv
 rgb_to_hs = protocol.rgb_to_hs
 hs_to_lepro_hsv = protocol.hs_to_lepro_hsv
 state_is_on = protocol.state_is_on
+state_datapoints_for_series = protocol.state_datapoints_for_series
 subscription_topics = protocol.subscription_topics
 topic_get = protocol.topic_get
 topic_set = protocol.topic_set
@@ -46,6 +47,24 @@ def test_topics() -> None:
         "le/123/prp/rpt",
         "le/123/prp/getr",
         "le/123/prp/setr",
+    )
+
+
+def test_state_queries_match_the_apk_product_families() -> None:
+    assert state_datapoints_for_series("B3") == (
+        "online", "d1", "d2", "d3", "d4", "d5"
+    )
+    assert state_datapoints_for_series("S1-10") == (
+        "online", "d1", "d2", "d3", "d4", "d5", "d50", "d52"
+    )
+    assert state_datapoints_for_series("E1-60") == (
+        "online", "d1", "d2", "d3", "d4", "d5", "d50", "d52", "d53"
+    )
+    assert state_datapoints_for_series("P1") == (
+        "online", "d1", "d100", "d101", "d102"
+    )
+    assert state_datapoints_for_series("future-product") == (
+        "online", "d1", "d2", "d3", "d4", "d5"
     )
 
 
