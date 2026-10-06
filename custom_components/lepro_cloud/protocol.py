@@ -86,13 +86,13 @@ def white_payload(ha_brightness: Any, color_temp_kelvin: Any) -> dict[str, int]:
 
 
 def kelvin_to_lepro_temperature(kelvin: Any) -> int:
-    """Convert HA Kelvin to Lepro d4 where 0 is cool and 1000 is warm."""
+    """Convert HA Kelvin to Lepro d4 where 0 is warm and 1000 is cool."""
     try:
         value = int(kelvin)
     except (TypeError, ValueError):
         value = MAX_HA_KELVIN
     value = max(MIN_HA_KELVIN, min(MAX_HA_KELVIN, value))
-    return round(((MAX_HA_KELVIN - value) / (MAX_HA_KELVIN - MIN_HA_KELVIN)) * MAX_COLOR_VALUE)
+    return round(((value - MIN_HA_KELVIN) / (MAX_HA_KELVIN - MIN_HA_KELVIN)) * MAX_COLOR_VALUE)
 
 
 def lepro_temperature_to_kelvin(value: Any) -> int | None:
@@ -102,7 +102,7 @@ def lepro_temperature_to_kelvin(value: Any) -> int | None:
     except (TypeError, ValueError):
         return None
     temperature = max(0, min(MAX_COLOR_VALUE, temperature))
-    return round(MAX_HA_KELVIN - ((temperature / MAX_COLOR_VALUE) * (MAX_HA_KELVIN - MIN_HA_KELVIN)))
+    return round(MIN_HA_KELVIN + ((temperature / MAX_COLOR_VALUE) * (MAX_HA_KELVIN - MIN_HA_KELVIN)))
 
 
 def color_payload(hs_color: tuple[float, float], ha_brightness: Any) -> dict[str, Any]:
@@ -119,7 +119,7 @@ def hs_to_lepro_hsv(hs_color: tuple[float, float], value: Any = MAX_COLOR_VALUE)
     """Convert HA HS color to Lepro's 12-digit lowercase HSV hex string."""
     hue, saturation = hs_color
     hsv = (
-        round((max(0.0, min(360.0, float(hue))) / 360) * MAX_COLOR_VALUE),
+        round(max(0.0, min(360.0, float(hue)))),
         round((max(0.0, min(100.0, float(saturation))) / 100) * MAX_COLOR_VALUE),
         max(0, min(MAX_COLOR_VALUE, int(value))),
     )
@@ -142,7 +142,7 @@ def lepro_hsv_to_hs(value: Any) -> tuple[float, float] | None:
     if hsv is None:
         return None
     hue, saturation, _brightness = hsv
-    return (round((hue / MAX_COLOR_VALUE) * 360, 3), round((saturation / MAX_COLOR_VALUE) * 100, 3))
+    return (round(hue % 360, 3), round((saturation / MAX_COLOR_VALUE) * 100, 3))
 
 
 def lepro_hsv_to_rgb(value: Any) -> tuple[int, int, int] | None:
@@ -152,7 +152,7 @@ def lepro_hsv_to_rgb(value: Any) -> tuple[int, int, int] | None:
         return None
     hue, saturation, brightness = hsv
     red, green, blue = colorsys.hsv_to_rgb(
-        hue / MAX_COLOR_VALUE,
+        ((hue % 360) / 360),
         saturation / MAX_COLOR_VALUE,
         brightness / MAX_COLOR_VALUE,
     )

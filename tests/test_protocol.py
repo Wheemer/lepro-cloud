@@ -73,14 +73,14 @@ def test_lepro_to_ha_brightness() -> None:
     assert lepro_to_ha_brightness("bad") is None
 
 
-def test_temperature_scale_is_reversed_kelvin_range() -> None:
-    assert kelvin_to_lepro_temperature(6500) == 0
-    assert kelvin_to_lepro_temperature(2700) == 1000
+def test_temperature_scale_maps_warm_to_cool_kelvin_range() -> None:
+    assert kelvin_to_lepro_temperature(6500) == 1000
+    assert kelvin_to_lepro_temperature(2700) == 0
     assert kelvin_to_lepro_temperature(4600) == 500
-    assert kelvin_to_lepro_temperature(9999) == 0
-    assert kelvin_to_lepro_temperature(1) == 1000
-    assert lepro_temperature_to_kelvin(0) == 6500
-    assert lepro_temperature_to_kelvin(1000) == 2700
+    assert kelvin_to_lepro_temperature(9999) == 1000
+    assert kelvin_to_lepro_temperature(1) == 0
+    assert lepro_temperature_to_kelvin(0) == 2700
+    assert lepro_temperature_to_kelvin(1000) == 6500
     assert lepro_temperature_to_kelvin("500") == 4600
     assert lepro_temperature_to_kelvin("bad") is None
 
@@ -94,8 +94,8 @@ def test_hsv_hex_parsing_requires_exact_lowercase_12_digit_payload() -> None:
 
 
 def test_hs_rgb_helpers_convert_lepro_hsv() -> None:
-    assert hs_to_lepro_hsv((120, 50), 250) == "014d01f400fa"
-    assert lepro_hsv_to_hs("01f403e803e8") == (180.0, 100.0)
+    assert hs_to_lepro_hsv((120, 50), 250) == "007801f400fa"
+    assert lepro_hsv_to_hs("00b403e803e8") == (180.0, 100.0)
     assert lepro_hsv_to_rgb("000003e803e8") == (255, 0, 0)
     assert rgb_to_hs(0, 255, 0) == (120.0, 100.0)
 
@@ -104,7 +104,7 @@ def test_color_payload_uses_verified_datapoints() -> None:
     assert color_payload((240, 75), 128) == {
         DP_WORK_MODE: WORK_MODE_COLOR,
         DP_BRIGHTNESS: 502,
-        DP_COLOR: "029b02ee01f6",
+        DP_COLOR: "00f002ee01f6",
     }
 
 

@@ -223,13 +223,13 @@ def test_light_reports_modes_from_state_datapoints() -> None:
         "d2": 0,
         "d3": 500,
         "d4": 0,
-        "d5": "01f403e803e8",
+        "d5": "00b403e803e8",
     }
 
     assert entity.supported_color_modes == {"color_temp", "hs"}
     assert entity.color_mode == "color_temp"
     assert entity.brightness == 128
-    assert entity.color_temp_kelvin == 6500
+    assert entity.color_temp_kelvin == 2700
     assert entity.hs_color == (180.0, 100.0)
 
     coordinator.states["light-1"]["d2"] = 1
@@ -251,11 +251,11 @@ def test_light_turn_on_honors_brightness_color_temp_and_hs_color() -> None:
     asyncio.run(entity.async_turn_on(color_temp_kelvin=2700))
     assert coordinator.commands[-1] == (
         "light-1",
-        {"d1": 1, "d2": 0, "d3": 502, "d4": 1000},
+        {"d1": 1, "d2": 0, "d3": 502, "d4": 0},
     )
 
     asyncio.run(entity.async_turn_on(hs_color=(120, 50), brightness=255))
     assert coordinator.commands[-1] == (
         "light-1",
-        {"d1": 1, "d2": 1, "d3": 1000, "d5": "014d01f403e8"},
+        {"d1": 1, "d2": 1, "d3": 1000, "d5": "007801f403e8"},
     )
