@@ -313,3 +313,29 @@ def test_device_scene_loader_follows_the_app_cursor() -> None:
     coordinator.devices = {"device-1": {"did": "device-1"}}
 
     asyncio.run(coordinator._load_device_scenes())
+
+
+def test_account_region_lookup_uses_the_app_bootstrap_endpoint(
+    monkeypatch: Any,
+) -> None:
+    client_module = _load_client_module()
+    monkeypatch.setattr(client_module.time, "time", lambda: 1720000000.789)
+    session = RecordingSession(
+        [FakeResponse({"code": 0, "data": {"apiHost": "api-eu-iot.lepro.com"}})]
+    )
+    monkeypatch.setattr(
+        client_module, "async_get_clientsession", lambda _hass: session
+    )
+
+    region = asyncio.run(
+        client_module.LeproApi.async_resolve_region(object(), "user@example.invalid")
+    )
+
+    assert region == "europe"
+    request = session.requests[0]
+    assert request["method"] == "POST"
+    assert request["url"] == "https://api-iot.lepro.com/user/region"
+    assert request["data"] == {
+        "account": "user@example.invalid",
+        "timestamp": "1720000000",
+    }
