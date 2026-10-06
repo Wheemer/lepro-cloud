@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/lepro_logo.png" alt="Lepro Cloud for Home Assistant" width="114">
+  <img src="assets/lepro_logo.png" alt="Lepro Cloud for Home Assistant" width="300">
 </p>
 
 # Lepro Cloud for Home Assistant
