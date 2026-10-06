@@ -256,6 +256,7 @@ def test_light_reports_modes_from_state_datapoints() -> None:
 
     coordinator.states["light-1"]["d2"] = 1
     assert entity.color_mode == "hs"
+    assert entity.brightness == 255
 
 
 def test_light_turn_on_honors_brightness_color_temp_and_hs_color() -> None:

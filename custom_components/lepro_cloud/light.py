@@ -37,6 +37,7 @@ from .protocol import (
     lepro_hsv_to_hs,
     lepro_temperature_to_kelvin,
     on_payload,
+    parse_lepro_hsv,
     state_datapoints_for_series,
     state_is_on,
     white_payload,
@@ -104,9 +105,12 @@ class LeproCloudLight(LightEntity):
     @property
     def brightness(self) -> int | None:
         """Return brightness in Home Assistant scale."""
-        return lepro_to_ha_brightness(
-            self.coordinator.states.get(self.device_id, {}).get(self._brightness_datapoint)
-        )
+        state = self.coordinator.states.get(self.device_id, {})
+        if self._work_mode == WORK_MODE_COLOR:
+            hsv = parse_lepro_hsv(state.get(DP_COLOR))
+            if hsv is not None:
+                return lepro_to_ha_brightness(hsv[2])
+        return lepro_to_ha_brightness(state.get(self._brightness_datapoint))
 
     @property
     def _brightness_datapoint(self) -> str:
