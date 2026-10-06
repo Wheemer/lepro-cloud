@@ -36,6 +36,8 @@ def _install_platform_import_stubs() -> None:
     homeassistant_core = types.ModuleType("homeassistant.core")
     homeassistant_core.HomeAssistant = object
 
+    entity = types.ModuleType("homeassistant.helpers.entity")
+    entity.EntityCategory = types.SimpleNamespace(CONFIG="config")
     entity_platform = types.ModuleType("homeassistant.helpers.entity_platform")
     entity_platform.AddEntitiesCallback = Callable[..., None]
 
@@ -63,6 +65,7 @@ def _install_platform_import_stubs() -> None:
     sys.modules["homeassistant.config_entries"] = config_entries
     sys.modules["homeassistant.core"] = homeassistant_core
     sys.modules.setdefault("homeassistant.helpers", types.ModuleType("homeassistant.helpers"))
+    sys.modules["homeassistant.helpers.entity"] = entity
     sys.modules["homeassistant.helpers.entity_platform"] = entity_platform
     sys.modules["homeassistant.const"] = homeassistant_const
     sys.modules.setdefault("paho", paho)
@@ -241,6 +244,7 @@ def test_stv1_exposes_verified_status_and_auto_toggle_switches() -> None:
     asyncio.run(switch.async_setup_entry(FakeHass(), entry, lambda added: entities.extend(added)))
     settings = [entity for entity in entities if entity.device_id == "stv-1"]
     assert [entity._attr_name for entity in settings] == ["Status LED", "Auto-Toggle Lights"]
+    assert all(entity._attr_entity_category == "config" for entity in settings)
     assert settings[0].is_on is True
     assert settings[1].is_on is False
     settings[1].hass = FakeHass()
