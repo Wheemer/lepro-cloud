@@ -13,40 +13,24 @@
 
 Home Assistant custom integration for Lepro Wi-Fi cloud devices.
 
-
 Lepro names, logos, icons, and product artwork are trademarks of their respective owners.
 
-## Current Support
+## Supported Products
 
-| Lepro Wi-Fi type | Home Assistant platform | Controls |
-| --- | --- | --- |
-| `1` light | `light` | On/off, brightness, RGB colour, colour temperature, and app-provided scenes |
-| `2` P1 plug | `switch` | On/off, Button Lock, Power Memory, and Indicator Light |
+The integration discovers supported products already present in your Lepro Home account and adds the appropriate Home Assistant entities.
 
-RGBIC, RGBIC-length, and STV1 light families use the product-specific state
-datapoints observed in the Lepro Home app. STV1 also exposes Status LED and
-Auto-Toggle Lights as configuration entities.
+| Lepro Wi-Fi product family | Home Assistant support |
+| --- | --- |
+| Standard bulbs and decorative lights | Light entity with on/off, brightness, colour, colour temperature, and app-provided effects where the product reports them. |
+| RGBIC light strips, rope lights, and neon-style strips | Light entity with on/off, brightness, colour, saved effects, and product-specific RGBIC scenes. |
+| RGBIC length-configurable strips | The same RGBIC controls, including the strip-length state used by the product. |
+| TV backlights | RGBIC light entity, saved effects, plus Status LED and Auto-Toggle Lights configuration entities. |
+| RGBIC table lamps | RGBIC light entity with the lamp's multi-part effects. |
+| P1 smart plugs | Switch entity with on/off, Button Lock, Power Memory, and Indicator Light settings. |
 
-## Verified Protocol Summary
+All discovered Lepro Wi-Fi lights are added as light entities; controls are exposed only when their device reports the necessary state.
 
-- Regional REST hosts:
-  - North America: `api-na-iot.lepro.com`
-  - Europe: `api-eu-iot.lepro.com`
-  - Asia: `api-fe-iot.lepro.com`
-- Login: `POST /user/login` with `platform=2`, `account`, `password`, `mac`, `timestamp`, `language`, and `fcmToken`.
-- Profile: `GET /user/profile` supplies MQTT `root`, `cert`, `host`, and `port`.
-- Discovery:
-  - `GET /family/list/timestamp/{timestamp}`
-  - `GET /v3/device/list/fid/{fid}/timestamp/{timestamp}`
-- MQTT:
-  - Publish get: `le/{deviceId}/prp/get`
-  - Publish set: `le/{deviceId}/prp/set`
-  - Subscribe: `le/{deviceId}/prp/rpt`, `le/{deviceId}/prp/getr`, `le/{deviceId}/prp/setr`
-- Shared on/off datapoint: `d1` (`1` on, `0` off).
-- Light datapoints: `d2` work mode, `d3` brightness, `d4` colour temperature,
-  and `d5` HSV colour.
-- RGBIC datapoints: `d50` scene, `d52` brightness, and `d53` strip length where used.
-- P1 plug settings: `d100` Power Memory, `d101` Indicator Light, and `d102` Button Lock.
+For the REST, MQTT, and datapoint reference, see [Protocol reference](docs/PROTOCOL.md).
 
 ## Installation
 
