@@ -29,7 +29,12 @@ async def async_setup_entry(
             continue
         entities.append(LeproCloudPlugSwitch(coordinator, did, device))
         if _has_lock_switch(device):
-            entities.append(LeproCloudPlugLockSwitch(coordinator, did, device))
+            entities.extend(
+                (
+                    LeproCloudPlugLockSwitch(coordinator, did, device),
+                    LeproCloudPlugPowerMemorySwitch(coordinator, did, device),
+                )
+            )
     for did, device in coordinator.devices.items():
         if _is_stv(device):
             entities.extend(
@@ -152,6 +157,38 @@ class LeproCloudPlugLockSwitch(LeproCloudPlugSwitch):
 
     async def _async_set_lock(self, enabled: bool) -> None:
         values = {"d102": 1 if enabled else 0}
+        await self.hass.async_add_executor_job(
+            self.coordinator.command, self.device_id, values
+        )
+        self.coordinator.states.setdefault(self.device_id, {}).update(values)
+        self.async_write_ha_state()
+
+
+class LeproCloudPlugPowerMemorySwitch(LeproCloudPlugLockSwitch):
+    """The P1 setting that restores its prior state after an outage."""
+
+    _attr_name = "Power Memory"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(
+        self, coordinator: LeproCoordinator, device_id: str, device: dict[str, Any]
+    ) -> None:
+        super().__init__(coordinator, device_id, device)
+        self._attr_unique_id = f"{DOMAIN}_{device_id}_power_memory"
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return whether the plug restores its state after a power outage."""
+        state = self.coordinator.states.get(self.device_id, {})
+        if "d100" not in state:
+            return None
+        try:
+            return int(state["d100"]) > 0
+        except (TypeError, ValueError):
+            return None
+
+    async def _async_set_lock(self, enabled: bool) -> None:
+        values = {"d100": 1 if enabled else 0}
         await self.hass.async_add_executor_job(
             self.coordinator.command, self.device_id, values
         )
