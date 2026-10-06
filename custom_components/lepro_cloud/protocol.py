@@ -41,8 +41,8 @@ RGBIC_SERIES = frozenset(
 )
 RGBIC_LENGTH_SERIES = frozenset(
     {
-        "WL1", "E1-30", "E1-60", "E1-90", "E1-Plus-30", "E1-Plus-60",
-        "E1-Plus-90", "E1-Plus-120", "E1-Plus-180", "EE1-30", "EE1-60", "EE1-90",
+        "WL1", "E1-30", "E1-60", "E1-90", "E1-PLUS-30", "E1-PLUS-60",
+        "E1-PLUS-90", "E1-PLUS-120", "E1-PLUS-180", "EE1-30", "EE1-60", "EE1-90",
         "EE1-120", "EE1-180", "S2-5", "S2-10", "S2-15", "S2-20", "S2-30",
         "SW1-5", "SW1-6", "SW1-10", "SW1-15", "SW1-20", "SW1-30",
     }
