@@ -250,6 +250,20 @@ def test_p1_plug_exposes_and_controls_its_button_lock() -> None:
     assert coordinator.commands[-1] == ("p1-1", {"d100": 0})
     assert memory.is_on is False
 
+    indicator = next(
+        entity
+        for entity in entities
+        if entity.device_id == "p1-1" and entity._attr_name == "Indicator Light"
+    )
+    indicator.hass = FakeHass()
+    assert indicator.is_on is None
+    asyncio.run(indicator.async_turn_on())
+    assert coordinator.commands[-1] == ("p1-1", {"d101": "100000000"})
+    assert indicator.is_on is True
+    asyncio.run(indicator.async_turn_off())
+    assert coordinator.commands[-1] == ("p1-1", {"d101": "000000000"})
+    assert indicator.is_on is False
+
 
 def test_stv1_exposes_verified_status_and_auto_toggle_switches() -> None:
     switch = _load_module("switch")

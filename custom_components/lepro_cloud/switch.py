@@ -33,6 +33,7 @@ async def async_setup_entry(
                 (
                     LeproCloudPlugLockSwitch(coordinator, did, device),
                     LeproCloudPlugPowerMemorySwitch(coordinator, did, device),
+                    LeproCloudPlugIndicatorLightSwitch(coordinator, did, device),
                 )
             )
     for did, device in coordinator.devices.items():
@@ -190,6 +191,31 @@ class LeproCloudPlugPowerMemorySwitch(LeproCloudPlugLockSwitch):
 
     async def _async_set_lock(self, enabled: bool) -> None:
         values = {"d100": 1 if enabled else 0}
+        await self.hass.async_add_executor_job(
+            self.coordinator.command, self.device_id, values
+        )
+        self.coordinator.states.setdefault(self.device_id, {}).update(values)
+        self.async_write_ha_state()
+
+
+class LeproCloudPlugIndicatorLightSwitch(LeproCloudPlugPowerMemorySwitch):
+    """The P1 status-indicator setting (d101)."""
+
+    _attr_name = "Indicator Light"
+
+    @property
+    def is_on(self) -> bool | None:
+        value = self.coordinator.states.get(self.device_id, {}).get("d101")
+        if not isinstance(value, str) or not value:
+            return None
+        if value == "100000000":
+            return True
+        if value == "000000000":
+            return False
+        return None
+
+    async def _async_set_lock(self, enabled: bool) -> None:
+        values = {"d101": "100000000" if enabled else "000000000"}
         await self.hass.async_add_executor_job(
             self.coordinator.command, self.device_id, values
         )
