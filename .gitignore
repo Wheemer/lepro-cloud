@@ -1,10 +1,45 @@
+# Python
 __pycache__/
 *.py[cod]
+*$py.class
+.python-version
+.venv/
+venv/
+env/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# Test, lint, and type-check output
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
+.tox/
+.nox/
+
+# Home Assistant local runtime files
+.storage/
+deps/
+home-assistant.log*
+home-assistant_v2.db*
+known_devices.yaml
+ip_bans.yaml
+OZW_Log.txt
+secrets.yaml
+configuration.yaml
+automations.yaml
+scenes.yaml
+scripts.yaml
+
+# Local environment and secrets
+.env
+.env.*
+*.log
 
 # Private APK-derived Lepro MQTT assets. These must not be committed or archived.
 .lepro_private/
@@ -15,3 +50,8 @@ custom_components/lepro_cloud/_private/
 *.pfx
 *.apk
 *.so
+
+# Codex scratch and diagnostics
+.codex/
+codex-scratch/
+CODEX_*.md

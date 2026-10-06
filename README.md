@@ -15,7 +15,10 @@ Lepro APK evidence and is not for public redistribution or release.
 
 Repository documentation: <https://github.com/Wheemer/lepro-cloud>
 
-Brand assets: official Lepro logo and launcher icon extracted from the user-supplied Lepro Home APK.
+Brand assets: user-supplied Lepro wordmark and a launcher icon extracted from the supplied Lepro Home APK.
+Lepro trademarks, names, logos, icons, product artwork, and any other Lepro-owned
+assets remain the property of their respective owners and are included only in
+this private repository.
 
 ## Scope
 
@@ -83,5 +86,8 @@ This repository includes focused protocol tests that do not require live Lepro c
 
 ```bash
 python3 -m pytest
-python3 -m compileall custom_components tests
+python3 -m compileall custom_components/lepro_cloud/*.py tests
 ```
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for maintainer workflow notes and
+[SECURITY.md](SECURITY.md) for private credential and asset handling guidance.
