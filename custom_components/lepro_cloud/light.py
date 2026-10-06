@@ -250,6 +250,10 @@ class LeproCloudLight(LightEntity):
             # values and must remain byte-for-byte intact.
             if datapoint == "d50":
                 values[self._brightness_datapoint] = ha_to_lepro_brightness(brightness)
+            elif datapoint == DP_COLOR and re.fullmatch(r"[0-9a-fA-F]{12}", value):
+                # The app keeps a saved HSV scene's hue and saturation but
+                # rewrites its final value component to the requested level.
+                values[DP_COLOR] = f"{value[:8]}{ha_to_lepro_brightness(brightness):04X}"
         elif ATTR_HS_COLOR in kwargs:
             values.update(color_payload(kwargs[ATTR_HS_COLOR], brightness))
         elif ATTR_COLOR_TEMP_KELVIN in kwargs:

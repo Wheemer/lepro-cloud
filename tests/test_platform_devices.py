@@ -421,3 +421,29 @@ def test_light_preserves_non_d50_scene_payloads() -> None:
     assert entity.effect_list == ["Breath"]
     asyncio.run(entity.async_turn_on(effect="Breath"))
     assert coordinator.commands[-1] == ("light-1", {"d1": 1, "d2": 2, "d6": "0001"})
+
+
+def test_light_updates_brightness_for_hsv_scene_payloads() -> None:
+    light = _load_module("light")
+    coordinator = FakeCoordinator()
+    device = coordinator.devices["light-1"]
+    device.update(
+        {
+            "series": "B1",
+            "scenes": [
+                {
+                    "name": "Gradient",
+                    "smartbulb": {"dp": "d5", "res": "007801F403E8"},
+                }
+            ],
+        }
+    )
+    coordinator.effect_types = {"B1": "smartbulb"}
+    entity = light.LeproCloudLight(coordinator, "light-1", device)
+    entity.hass = FakeHass()
+
+    asyncio.run(entity.async_turn_on(effect="Gradient", brightness=128))
+    assert coordinator.commands[-1] == (
+        "light-1",
+        {"d1": 1, "d2": 2, "d5": "007801F401F6"},
+    )
