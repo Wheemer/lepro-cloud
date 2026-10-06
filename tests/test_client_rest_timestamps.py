@@ -175,3 +175,66 @@ def test_product_config_http_failure_becomes_nonfatal_api_error() -> None:
         raise AssertionError("expected LeproApiError")
 
     assert session.requests[0]["url"].endswith("/pub/resources/config.series.json")
+
+
+def test_mqtt_setup_failure_cleans_up_certificates_and_is_retryable(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    client_module = _load_client_module()
+    created: list[Path] = []
+
+    class TempDirectory:
+        def __init__(self, prefix: str) -> None:
+            self.name = str(tmp_path / prefix)
+            Path(self.name).mkdir()
+            created.append(Path(self.name))
+
+        def cleanup(self) -> None:
+            for path in Path(self.name).iterdir():
+                path.unlink()
+            Path(self.name).rmdir()
+
+    class FailingMqttClient:
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            pass
+
+        def tls_set(self, **_kwargs: Any) -> None:
+            pass
+
+        def reconnect_delay_set(self, **_kwargs: Any) -> None:
+            pass
+
+        def connect(self, *_args: Any) -> None:
+            raise OSError("connection refused")
+
+        def disconnect(self) -> None:
+            pass
+
+    monkeypatch.setattr(client_module.tempfile, "TemporaryDirectory", TempDirectory)
+    monkeypatch.setattr(client_module.mqtt, "Client", FailingMqttClient)
+    coordinator = client_module.LeproCoordinator.__new__(client_module.LeproCoordinator)
+    coordinator.api = types.SimpleNamespace(uid="test")
+    coordinator.tmp = None
+    coordinator.client = None
+    coordinator._on_connect = lambda *_args: None
+    coordinator._on_disconnect = lambda *_args: None
+    coordinator._on_message = lambda *_args: None
+
+    try:
+        coordinator._connect(
+            {"host": "mqtt.example.invalid", "port": 8883},
+            {
+                "root": "-----BEGIN CERTIFICATE-----\nroot",
+                "cert": "-----BEGIN CERTIFICATE-----\ncert",
+                "key": "-----BEGIN PRIVATE KEY-----\nkey",
+                "key_password": "secret",
+            },
+        )
+    except client_module.LeproMqttError as err:
+        assert str(err) == "Unable to connect to Lepro MQTT"
+    else:
+        raise AssertionError("expected LeproMqttError")
+
+    assert coordinator.tmp is None
+    assert coordinator.client is None
+    assert created and not created[0].exists()

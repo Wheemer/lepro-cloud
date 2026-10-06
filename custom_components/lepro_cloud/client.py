@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Mapping
+from contextlib import suppress
 import json
 import logging
 from pathlib import Path
@@ -250,35 +251,55 @@ class LeproCoordinator:
         return value
 
     def _connect(self, info: Mapping[str, Any], certs: Mapping[str, str]) -> None:
-        self.tmp = tempfile.TemporaryDirectory(prefix="lepro_cloud_")
-        directory = Path(self.tmp.name)
-        paths = {
-            "root": directory / "root.pem",
-            "cert": directory / "cert.pem",
-            "key": directory / "key.pem",
-        }
-        for name, path in paths.items():
-            path.write_text(certs[name], encoding="utf-8")
-            path.chmod(0o600)
+        """Configure MQTT, cleaning up completely if setup cannot finish."""
+        tmp = tempfile.TemporaryDirectory(prefix="lepro_cloud_")
+        client: mqtt.Client | None = None
+        loop_started = False
+        try:
+            directory = Path(tmp.name)
+            paths = {
+                "root": directory / "root.pem",
+                "cert": directory / "cert.pem",
+                "key": directory / "key.pem",
+            }
+            for name, path in paths.items():
+                path.write_text(certs[name], encoding="utf-8")
+                path.chmod(0o600)
 
-        client = mqtt.Client(
-            mqtt.CallbackAPIVersion.VERSION2,
-            client_id=f"ha-lepro-{self.api.uid or _now_seconds()}",
-            clean_session=True,
-        )
-        client.tls_set(
-            ca_certs=str(paths["root"]),
-            certfile=str(paths["cert"]),
-            keyfile=str(paths["key"]),
-            keyfile_password=certs["key_password"],
-            tls_version=ssl.PROTOCOL_TLS_CLIENT,
-        )
-        client.reconnect_delay_set(min_delay=2, max_delay=300)
-        client.on_connect = self._on_connect
-        client.on_disconnect = self._on_disconnect
-        client.on_message = self._on_message
-        client.connect(str(info["host"]), int(info["port"]), MQTT_KEEPALIVE)
-        client.loop_start()
+            client = mqtt.Client(
+                mqtt.CallbackAPIVersion.VERSION2,
+                client_id=f"ha-lepro-{self.api.uid or _now_seconds()}",
+                clean_session=True,
+            )
+            client.tls_set(
+                ca_certs=str(paths["root"]),
+                certfile=str(paths["cert"]),
+                keyfile=str(paths["key"]),
+                keyfile_password=certs["key_password"],
+                tls_version=ssl.PROTOCOL_TLS_CLIENT,
+            )
+            client.reconnect_delay_set(min_delay=2, max_delay=300)
+            client.on_connect = self._on_connect
+            client.on_disconnect = self._on_disconnect
+            client.on_message = self._on_message
+            client.connect(str(info["host"]), int(info["port"]), MQTT_KEEPALIVE)
+            loop_result = client.loop_start()
+            if loop_result not in (None, mqtt.MQTT_ERR_SUCCESS):
+                raise LeproMqttError("Lepro MQTT network loop could not start")
+            loop_started = True
+        except Exception as err:
+            if client is not None:
+                if loop_started:
+                    with suppress(Exception):
+                        client.loop_stop()
+                with suppress(Exception):
+                    client.disconnect()
+            tmp.cleanup()
+            if isinstance(err, LeproMqttError):
+                raise
+            raise LeproMqttError("Unable to connect to Lepro MQTT") from err
+
+        self.tmp = tmp
         self.client = client
 
     def _on_connect(
