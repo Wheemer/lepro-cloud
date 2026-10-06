@@ -213,7 +213,7 @@ def test_region_choices_use_human_labels_with_stored_values() -> None:
     assert module.REGION_CHOICES == {
         "north_america": "North America",
         "europe": "Europe",
-        "far_east": "Far East",
+        "far_east": "Asia",
     }
     region_field = next(
         field for field in module._credentials_schema() if field.key == "region"

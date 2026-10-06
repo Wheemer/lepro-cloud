@@ -24,7 +24,7 @@ _LOGGER = logging.getLogger(__name__)
 REGION_CHOICES = {
     "north_america": "North America",
     "europe": "Europe",
-    "far_east": "Far East",
+    "far_east": "Asia",
 }
 
 
