@@ -338,17 +338,17 @@ def test_light_turn_on_honors_brightness_color_temp_and_hs_color() -> None:
     )
 
 
-def test_light_uses_app_supplied_scenes_as_effects() -> None:
+def test_tb1_uses_app_supplied_multipart_scenes() -> None:
     light = _load_module("light")
     coordinator = FakeCoordinator()
     device = coordinator.devices["light-1"]
     device.update(
         {
-            "series": "S1-10",
+            "series": "TB1",
             "scenes": [
                 {
                     "scene": "Aurora",
-                    "striplight": {
+                    "earthlight": {
                         "dp": "d50",
                         "res": "N01:P10001FF9700F2100010054R6U200020054V2000640000E1;",
                     },
@@ -356,7 +356,7 @@ def test_light_uses_app_supplied_scenes_as_effects() -> None:
             ],
         }
     )
-    coordinator.effect_types = {"S1-10": "striplight"}
+    coordinator.effect_types = {"TB1": "earthlight"}
     coordinator.states["light-1"] = {"d52": 500}
     entity = light.LeproCloudLight(coordinator, "light-1", device)
     entity.hass = FakeHass()
