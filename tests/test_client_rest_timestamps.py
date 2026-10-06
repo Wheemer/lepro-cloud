@@ -65,6 +65,9 @@ class FakeResponse:
     async def json(self, **_kwargs: Any) -> Any:
         return self._payload
 
+    async def text(self) -> str:
+        return str(self._payload)
+
 
 class RecordingSession:
     def __init__(self, responses: list[FakeResponse]) -> None:
@@ -263,3 +266,15 @@ def test_mqtt_disconnect_notifies_entities_of_availability_change() -> None:
     callback, args = queued.pop()
     callback(*args)
     assert notified == ["light-1"]
+
+
+def test_certificate_http_failure_becomes_retryable_api_error() -> None:
+    client_module = _load_client_module()
+    api = _api(client_module, RecordingSession([FakeResponse("unavailable", status=503)]))
+
+    try:
+        asyncio.run(api.async_text("https://cert.example.invalid/client.pem"))
+    except client_module.LeproApiError as err:
+        assert str(err) == "Lepro certificate download failed"
+    else:
+        raise AssertionError("expected LeproApiError")

@@ -178,7 +178,8 @@ class LeproApi:
         try:
             async with asyncio.timeout(REQUEST_TIMEOUT):
                 response = await self._session.get(url, headers=self._headers())
-                response.raise_for_status()
+                if response.status >= 400:
+                    raise LeproApiError("Lepro certificate download failed")
                 return await response.text()
         except (OSError, TimeoutError, ValueError) as err:
             raise LeproApiError(f"Unable to download Lepro certificate from {url}") from err
