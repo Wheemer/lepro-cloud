@@ -11,10 +11,7 @@
   <img src="https://img.shields.io/badge/PLATFORMS-LIGHT%20%7C%20PLUG-22C55E?style=for-the-badge&logo=home-assistant&logoColor=white&labelColor=555555" alt="Light and plug platforms">
 </p>
 
-Private clean-room Home Assistant custom integration for Lepro Wi-Fi cloud devices.
-
-This repository is a private server-side integration derived from the user's supplied
-Lepro APK evidence and is not for public redistribution or release.
+Home Assistant custom integration for Lepro Wi-Fi cloud devices.
 
 
 Brand assets: user-supplied Lepro wordmark and a launcher icon extracted from the supplied Lepro Home APK.
