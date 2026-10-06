@@ -47,6 +47,9 @@ RGBIC_LENGTH_SERIES = frozenset(
         "SW1-5", "SW1-6", "SW1-10", "SW1-15", "SW1-20", "SW1-30",
     }
 )
+# Table lamps use the same RGBIC state datapoints, but their d50 payloads
+# may contain multipart, product-specific patterns supplied by the app.
+RGBIC_MULTIPART_SCENE_SERIES = frozenset({"TB1", "TB1-PRO"})
 BULB_STATE_DATAPOINTS = (
     DP_ONLINE,
     DP_ON,
@@ -90,6 +93,8 @@ def state_datapoints_for_series(series: Any) -> tuple[str, ...]:
         return RGBIC_LENGTH_STATE_DATAPOINTS
     if name == "STV1":
         return STV_STATE_DATAPOINTS
+    if name in RGBIC_MULTIPART_SCENE_SERIES:
+        return RGBIC_STATE_DATAPOINTS
     if name in RGBIC_SERIES:
         return RGBIC_STATE_DATAPOINTS
     return BULB_STATE_DATAPOINTS

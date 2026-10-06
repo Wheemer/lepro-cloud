@@ -191,7 +191,12 @@ class LeproCloudLight(LightEntity):
             value = effect.get("res")
             if datapoint not in ("d6", "d50") or not isinstance(value, str) or not value:
                 continue
-            name = scene.get("scene") or effect.get("scene") or scene.get("groupName")
+            name = (
+                scene.get("name")
+                or scene.get("groupName")
+                or effect.get("scene")
+                or scene.get("scene")
+            )
             if not isinstance(name, str) or not name.strip():
                 name = f"Scene {scene.get('cid', index)}"
             base_name = name.strip()

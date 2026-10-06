@@ -141,7 +141,7 @@ def test_discovery_urls_use_unix_seconds(monkeypatch: Any) -> None:
     )
     api = _api(client_module, session)
 
-    assert asyncio.run(api.async_devices()) == [{"did": "device-1"}]
+    assert asyncio.run(api.async_devices()) == [{"did": "device-1", "fid": "family-1"}]
 
     assert session.requests[0]["url"].endswith("/family/list/timestamp/1720000000")
     assert session.requests[1]["url"].endswith(
@@ -278,3 +278,18 @@ def test_certificate_http_failure_becomes_retryable_api_error() -> None:
         assert str(err) == "Lepro certificate download failed"
     else:
         raise AssertionError("expected LeproApiError")
+
+
+def test_device_scene_url_uses_the_app_scene_endpoint(monkeypatch: Any) -> None:
+    client_module = _load_client_module()
+    monkeypatch.setattr(client_module.time, "time", lambda: 1720000000.789)
+    session = RecordingSession([FakeResponse({"code": 0, "data": []})])
+    api = _api(client_module, session)
+
+    assert asyncio.run(
+        api.async_device_scenes({"fid": "family-1", "did": "device-1"})
+    ) == []
+    assert session.requests[0]["url"].endswith(
+        "/v3/scene/list/fid/family-1/did/device-1/cid/0/limit/100/"
+        "timestamp/1720000000"
+    )

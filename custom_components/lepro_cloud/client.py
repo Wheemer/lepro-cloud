@@ -155,8 +155,32 @@ class LeproApi:
             for device in _as_list(result):
                 did = device.get("did")
                 if did:
+                    # The app's scene endpoint requires the owning family ID.
+                    # Discovery responses do not reliably repeat it on every
+                    # device record, so retain it while it is unambiguous.
+                    device.setdefault("fid", fid)
                     devices[str(did)] = device
         return list(devices.values())
+
+    async def async_device_scenes(
+        self, device: Mapping[str, Any]
+    ) -> list[dict[str, Any]]:
+        """Return the saved and supplied scenes for one device.
+
+        This is the same per-device scene-list route used by the Android app.
+        Scene payloads are intentionally returned unmodified: multipart RGBIC
+        data is device-specific and must never be reconstructed by HA.
+        """
+        fid = device.get("fid")
+        did = device.get("did")
+        if not fid or not did:
+            return []
+        result = await self._request(
+            "GET",
+            f"/v3/scene/list/fid/{fid}/did/{did}/cid/0/limit/100/"
+            f"timestamp/{_now_seconds()}",
+        )
+        return _as_list(result)
 
     async def async_product_configs(self) -> list[dict[str, Any]]:
         """Download the app's public product-to-effect mapping."""
@@ -226,6 +250,7 @@ class LeproCoordinator:
                 for item in configs
                 if item.get("series") and item.get("effect") not in (None, "", "null")
             }
+        await self._load_device_scenes()
         info = _mqtt_info(profile)
         try:
             key = await self.hass.async_add_executor_job(load_mqtt_private_key)
@@ -233,6 +258,19 @@ class LeproCoordinator:
             raise LeproMqttError(str(err)) from err
         certs = await self._resolve_certs(info, key, self.api.secret or "")
         await self.hass.async_add_executor_job(self._connect, info, certs)
+
+    async def _load_device_scenes(self) -> None:
+        """Load app scenes without making device discovery unavailable."""
+        device_items = list(self.devices.items())
+        results = await asyncio.gather(
+            *(self.api.async_device_scenes(device) for _, device in device_items),
+            return_exceptions=True,
+        )
+        for (did, device), result in zip(device_items, results, strict=True):
+            if isinstance(result, Exception):
+                _LOGGER.debug("Unable to load Lepro scenes for %s: %s", did, result)
+                continue
+            device["scenes"] = result
 
     async def _resolve_certs(
         self, info: Mapping[str, Any], key: str, key_password: str
