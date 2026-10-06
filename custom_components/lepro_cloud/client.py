@@ -1,4 +1,4 @@
-"""Clean-room Lepro Cloud REST API and MQTT transport."""
+"""Lepro Cloud REST API and MQTT transport."""
 
 from __future__ import annotations
 

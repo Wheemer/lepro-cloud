@@ -1,6 +1,6 @@
 # Development
 
-This is a private clean-room Home Assistant custom integration. Keep
+This Home Assistant custom integration keeps
 `custom_components/lepro_cloud` as the standard integration module and avoid
 moving runtime code into a package layout that Home Assistant or HACS would not
 install directly.
