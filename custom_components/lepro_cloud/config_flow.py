@@ -21,23 +21,13 @@ from .const import CONF_REGION, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-REGION_CHOICES = {
-    "north_america": "North America",
-    "europe": "Europe",
-    "far_east": "Asia",
-}
-
 
 def _account_unique_id(region: str, username: str) -> str:
     """Return the stable unique ID for a Lepro Cloud account."""
     return f"{region}:{username.lower()}"
 
 
-def _credentials_schema(
-    *,
-    username: str | None = None,
-    region: str = "north_america",
-) -> vol.Schema:
+def _credentials_schema(*, username: str | None = None) -> vol.Schema:
     """Return the Lepro Cloud credentials form schema."""
     username_field = (
         vol.Required(CONF_USERNAME, default=username)
@@ -48,9 +38,39 @@ def _credentials_schema(
         {
             username_field: str,
             vol.Required(CONF_PASSWORD): str,
-            vol.Required(CONF_REGION, default=region): vol.In(REGION_CHOICES),
         }
     )
+
+
+def _region_from_hass_location(hass: Any) -> str:
+    """Choose Lepro's regional service from the HA server location."""
+    config = getattr(hass, "config", None)
+    try:
+        latitude = float(config.latitude)
+        longitude = float(config.longitude)
+    except (AttributeError, TypeError, ValueError):
+        latitude = longitude = None
+
+    if (
+        latitude is not None
+        and longitude is not None
+        and -90 <= latitude <= 90
+        and -180 <= longitude <= 180
+    ):
+        # Lepro divides service at broad geographic boundaries: the Americas,
+        # Europe/Africa/Middle East, and Asia/Oceania.
+        if longitude <= -30:
+            return "north_america"
+        if longitude >= 60:
+            return "far_east"
+        return "europe"
+
+    time_zone = str(getattr(config, "time_zone", ""))
+    if time_zone.startswith("America/"):
+        return "north_america"
+    if time_zone.startswith(("Asia/", "Australia/", "Pacific/")):
+        return "far_east"
+    return "europe"
 
 
 def _flow_error(error: LeproError) -> str:
@@ -84,20 +104,17 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             username = user_input[CONF_USERNAME].strip()
-            # Match the Android app, which trims both fields before login.
             password = user_input[CONF_PASSWORD].strip()
-            region = user_input[CONF_REGION].strip()
-            await self.async_set_unique_id(_account_unique_id(region, username))
-            self._abort_if_unique_id_configured()
+            region = _region_from_hass_location(self.hass)
 
             try:
-                await LeproApi(self.hass, region).async_login(
-                    username, password
-                )
+                await LeproApi(self.hass, region).async_login(username, password)
             except LeproApiError as err:
                 _log_api_error(err)
                 errors["base"] = _flow_error(err)
             else:
+                await self.async_set_unique_id(_account_unique_id(region, username))
+                self._abort_if_unique_id_configured()
                 return self.async_create_entry(
                     title=f"Lepro Cloud ({username})",
                     data={
@@ -122,22 +139,22 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             username = user_input[CONF_USERNAME].strip()
-            # Match the Android app, which trims both fields before login.
             password = user_input[CONF_PASSWORD].strip()
-            region = user_input[CONF_REGION].strip()
-            unique_id = _account_unique_id(region, username)
+            region = _region_from_hass_location(self.hass)
 
-            duplicate_entry = await self.async_set_unique_id(unique_id)
-            if duplicate_entry is not None and duplicate_entry.entry_id != entry.entry_id:
-                errors["base"] = "already_configured"
+            try:
+                await LeproApi(self.hass, region).async_login(username, password)
+            except LeproApiError as err:
+                _log_api_error(err)
+                errors["base"] = _flow_error(err)
             else:
-                try:
-                    await LeproApi(self.hass, region).async_login(
-                        username, password
-                    )
-                except LeproApiError as err:
-                    _log_api_error(err)
-                    errors["base"] = _flow_error(err)
+                unique_id = _account_unique_id(region, username)
+                duplicate_entry = await self.async_set_unique_id(unique_id)
+                if (
+                    duplicate_entry is not None
+                    and duplicate_entry.entry_id != entry.entry_id
+                ):
+                    errors["base"] = "already_configured"
                 else:
                     return self.async_update_reload_and_abort(
                         entry,
@@ -152,9 +169,6 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=_credentials_schema(
-                username=entry.data[CONF_USERNAME],
-                region=entry.data[CONF_REGION],
-            ),
+            data_schema=_credentials_schema(username=entry.data[CONF_USERNAME]),
             errors=errors,
         )

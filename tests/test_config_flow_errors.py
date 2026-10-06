@@ -207,22 +207,38 @@ class _ConfigEntries:
         self.reloads.append(entry_id)
 
 
-def test_region_choices_use_human_labels_with_stored_values() -> None:
+def test_credentials_schema_asks_for_credentials_only() -> None:
     module = _load_config_flow_module()
 
-    assert module.REGION_CHOICES == {
-        "north_america": "North America",
-        "europe": "Europe",
-        "far_east": "Asia",
-    }
-    region_field = next(
-        field for field in module._credentials_schema() if field.key == "region"
+    fields = {field.key: field.default for field in module._credentials_schema()}
+    assert fields == {"username": None, "password": None}
+
+
+def test_region_comes_from_home_assistant_server_location() -> None:
+    module = _load_config_flow_module()
+
+    def hass(latitude: float, longitude: float) -> Any:
+        return types.SimpleNamespace(
+            config=types.SimpleNamespace(
+                latitude=latitude, longitude=longitude, time_zone="Etc/UTC"
+            )
+        )
+
+    assert module._region_from_hass_location(hass(47.56, -52.71)) == "north_america"
+    assert module._region_from_hass_location(hass(51.51, -0.13)) == "europe"
+    assert module._region_from_hass_location(hass(-33.87, 151.21)) == "far_east"
+
+
+def test_region_uses_server_timezone_only_when_location_is_unavailable() -> None:
+    module = _load_config_flow_module()
+
+    hass = types.SimpleNamespace(
+        config=types.SimpleNamespace(time_zone="America/St_Johns")
     )
-    assert module._credentials_schema()[region_field] == module.REGION_CHOICES
-    assert "api-" not in str(module._credentials_schema())
+    assert module._region_from_hass_location(hass) == "north_america"
 
 
-def test_reconfigure_form_prefills_username_and_region_not_password() -> None:
+def test_reconfigure_form_prefills_username_not_password_or_region() -> None:
     module = _load_config_flow_module()
     entry = _entry(
         entry_id="one",
@@ -232,7 +248,8 @@ def test_reconfigure_form_prefills_username_and_region_not_password() -> None:
     )
     flow = module.LeproCloudFlow()
     flow.hass = types.SimpleNamespace(
-        config_entries=_ConfigEntries([entry], reconfigure_entry=entry)
+        config_entries=_ConfigEntries([entry], reconfigure_entry=entry),
+        config=types.SimpleNamespace(latitude=51.51, longitude=-0.13),
     )
 
     result = asyncio.run(flow.async_step_reconfigure())
@@ -240,12 +257,12 @@ def test_reconfigure_form_prefills_username_and_region_not_password() -> None:
     assert result["type"] == "form"
     assert result["step_id"] == "reconfigure"
     fields = {field.key: field.default for field in result["data_schema"]}
-    assert fields["username"] == "user@example.com"
-    assert fields["region"] == "europe"
-    assert fields["password"] is None
+    assert fields == {"username": "user@example.com", "password": None}
 
 
-def test_reconfigure_updates_and_reloads_existing_entry(monkeypatch: Any) -> None:
+def test_reconfigure_uses_server_location_updates_and_reloads_existing_entry(
+    monkeypatch: Any,
+) -> None:
     module = _load_config_flow_module()
     entry = _entry(
         entry_id="one",
@@ -255,7 +272,10 @@ def test_reconfigure_updates_and_reloads_existing_entry(monkeypatch: Any) -> Non
     )
     config_entries = _ConfigEntries([entry], reconfigure_entry=entry)
     flow = module.LeproCloudFlow()
-    flow.hass = types.SimpleNamespace(config_entries=config_entries)
+    flow.hass = types.SimpleNamespace(
+        config_entries=config_entries,
+        config=types.SimpleNamespace(latitude=51.51, longitude=-0.13),
+    )
 
     class Api:
         def __init__(self, hass: Any, region: str) -> None:
@@ -273,7 +293,6 @@ def test_reconfigure_updates_and_reloads_existing_entry(monkeypatch: Any) -> Non
             {
                 "username": " new@example.com ",
                 "password": " new-password ",
-                "region": "europe",
             }
         )
     )
@@ -290,43 +309,9 @@ def test_reconfigure_updates_and_reloads_existing_entry(monkeypatch: Any) -> Non
     assert config_entries.reloads == ["one"]
 
 
-def test_reconfigure_preserves_unique_id_when_account_region_unchanged(
+def test_reconfigure_rejects_duplicate_other_entry_after_login(
     monkeypatch: Any,
 ) -> None:
-    module = _load_config_flow_module()
-    entry = _entry(
-        entry_id="one",
-        username="User@Example.com",
-        password="old-password",
-        region="north_america",
-    )
-    config_entries = _ConfigEntries([entry], reconfigure_entry=entry)
-    flow = module.LeproCloudFlow()
-    flow.hass = types.SimpleNamespace(config_entries=config_entries)
-
-    class Api:
-        def __init__(self, hass: Any, region: str) -> None:
-            pass
-
-        async def async_login(self, username: str, password: str) -> None:
-            pass
-
-    monkeypatch.setattr(module, "LeproApi", Api)
-
-    asyncio.run(
-        flow.async_step_reconfigure(
-            {
-                "username": " User@Example.com ",
-                "password": " updated ",
-                "region": "north_america",
-            }
-        )
-    )
-
-    assert entry.unique_id == "north_america:user@example.com"
-
-
-def test_reconfigure_rejects_duplicate_other_entry(monkeypatch: Any) -> None:
     module = _load_config_flow_module()
     entry = _entry(
         entry_id="one",
@@ -342,12 +327,16 @@ def test_reconfigure_rejects_duplicate_other_entry(monkeypatch: Any) -> None:
     )
     flow = module.LeproCloudFlow()
     flow.hass = types.SimpleNamespace(
-        config_entries=_ConfigEntries([entry, duplicate], reconfigure_entry=entry)
+        config_entries=_ConfigEntries([entry, duplicate], reconfigure_entry=entry),
+        config=types.SimpleNamespace(latitude=51.51, longitude=-0.13),
     )
 
     class Api:
-        def __init__(self, hass: Any, region: str) -> None:
-            raise AssertionError("duplicate should be rejected before login")
+        def __init__(self, _hass: Any, region: str) -> None:
+            assert region == "europe"
+
+        async def async_login(self, _username: str, _password: str) -> None:
+            pass
 
     monkeypatch.setattr(module, "LeproApi", Api)
 
@@ -356,7 +345,6 @@ def test_reconfigure_rejects_duplicate_other_entry(monkeypatch: Any) -> None:
             {
                 "username": " TWO@example.com ",
                 "password": " new-password ",
-                "region": "europe",
             }
         )
     )
