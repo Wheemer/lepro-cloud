@@ -29,7 +29,6 @@ MAX_COLOR_VALUE = 1000
 HSV_HEX_RE = re.compile(r"^[0-9a-f]{12}$")
 
 SUBSCRIBE_SUFFIXES = ("rpt", "getr", "setr")
-CAMERA_SUBSCRIBE_SUFFIXES = ("prp/rpt", "act/exer", "prp/dsr/app/getr", "prp/getr")
 MQTT_TOPIC_PREFIX = "le"
 
 
@@ -43,23 +42,8 @@ def topic_set(device_id: str) -> str:
     return f"{MQTT_TOPIC_PREFIX}/{device_id}/prp/set"
 
 
-def topic_camera_get(device_id: str) -> str:
-    """Return the camera status-get topic used by the Android app."""
-    return f"{MQTT_TOPIC_PREFIX}/{device_id}/prp/dsr/app/get"
-
-
-def topic_camera_execute(device_id: str) -> str:
-    """Return the camera action topic used for the P2P address exchange."""
-    return f"{MQTT_TOPIC_PREFIX}/{device_id}/act/exe"
-
-
-def subscription_topics(device_id: str, *, is_camera: bool = False) -> tuple[str, ...]:
-    """Return the exact response/report topics used by the Android app."""
-    if is_camera:
-        return tuple(
-            f"{MQTT_TOPIC_PREFIX}/{device_id}/{suffix}"
-            for suffix in CAMERA_SUBSCRIBE_SUFFIXES
-        )
+def subscription_topics(device_id: str) -> tuple[str, ...]:
+    """Return the response/report topics used by Wi-Fi lights and plugs."""
     return tuple(
         f"{MQTT_TOPIC_PREFIX}/{device_id}/prp/{suffix}" for suffix in SUBSCRIBE_SUFFIXES
     )
@@ -69,10 +53,6 @@ def make_get_payload() -> dict[str, Any]:
     """Build a safe state request payload."""
     return {"id": uuid4().hex, "d": {}}
 
-
-def make_camera_get_payload() -> dict[str, Any]:
-    """Build the camera status request observed in the Android MQTT client."""
-    return {"id": uuid4().hex, "d": [DP_ONLINE]}
 
 
 def make_set_payload(values: Mapping[str, Any]) -> dict[str, Any]:

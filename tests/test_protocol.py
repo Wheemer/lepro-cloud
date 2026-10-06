@@ -34,10 +34,7 @@ parse_lepro_hsv = protocol.parse_lepro_hsv
 rgb_to_hs = protocol.rgb_to_hs
 hs_to_lepro_hsv = protocol.hs_to_lepro_hsv
 state_is_on = protocol.state_is_on
-make_camera_get_payload = protocol.make_camera_get_payload
 subscription_topics = protocol.subscription_topics
-topic_camera_execute = protocol.topic_camera_execute
-topic_camera_get = protocol.topic_camera_get
 topic_get = protocol.topic_get
 topic_set = protocol.topic_set
 
@@ -50,20 +47,6 @@ def test_topics() -> None:
         "le/123/prp/getr",
         "le/123/prp/setr",
     )
-    assert topic_camera_get("123") == "le/123/prp/dsr/app/get"
-    assert topic_camera_execute("123") == "le/123/act/exe"
-    assert subscription_topics("123", is_camera=True) == (
-        "le/123/prp/rpt",
-        "le/123/act/exer",
-        "le/123/prp/dsr/app/getr",
-        "le/123/prp/getr",
-    )
-
-
-def test_camera_get_payload_requests_online_status() -> None:
-    payload = make_camera_get_payload()
-    assert isinstance(payload["id"], str)
-    assert payload["d"] == ["online"]
 
 
 def test_on_payload() -> None:

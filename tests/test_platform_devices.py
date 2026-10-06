@@ -114,7 +114,6 @@ class FakeCoordinator:
         self.devices = {
             "light-1": {"did": "light-1", "type": 1, "name": "Light"},
             "plug-1": {"did": "plug-1", "type": 2, "name": "Plug"},
-            "camera-1": {"did": "camera-1", "type": 3, "name": "Camera"},
             "legacy-1": {"did": "legacy-1", "name": "Unknown"},
         }
         self.states: dict[str, dict[str, Any]] = {}
@@ -137,27 +136,23 @@ def test_platforms_expose_only_verified_device_types() -> None:
 
     assert device.device_type({"type": 1}) == device.DEVICE_TYPE_LIGHT
     assert device.device_type({"deviceType": "2"}) == device.DEVICE_TYPE_PLUG
-    assert device.device_type({"devType": 3}) == device.DEVICE_TYPE_CAMERA
     assert device.device_type({"type": "camera"}) is None
     assert device.device_type({}) is None
     assert device.is_light({"type": 1})
     assert device.is_plug({"type": 2})
-    assert device.is_camera({"type": 3})
 
     assert light._is_supported_light({"type": 1})
     assert light._is_supported_light({"deviceType": "1"})
     assert not light._is_supported_light({"type": 2})
-    assert not light._is_supported_light({"type": 3})
     assert not light._is_supported_light({})
 
     assert switch._is_supported_switch({"type": 2})
     assert switch._is_supported_switch({"devType": "2"})
     assert not switch._is_supported_switch({"type": 1})
-    assert not switch._is_supported_switch({"type": 3})
     assert not switch._is_supported_switch({})
 
 
-def test_setup_entry_adds_lights_and_switches_without_cameras() -> None:
+def test_setup_entry_adds_lights_and_switches() -> None:
     light = _load_module("light")
     switch = _load_module("switch")
     coordinator = FakeCoordinator()

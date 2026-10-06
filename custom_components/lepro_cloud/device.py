@@ -6,7 +6,6 @@ from typing import Any
 
 DEVICE_TYPE_LIGHT = 1
 DEVICE_TYPE_PLUG = 2
-DEVICE_TYPE_CAMERA = 3
 
 
 def device_type(device: dict[str, Any]) -> int | None:
@@ -39,8 +38,3 @@ def is_light(device: dict[str, Any]) -> bool:
 def is_plug(device: dict[str, Any]) -> bool:
     """Return true when discovery identifies a Wi-Fi plug."""
     return device_type(device) == DEVICE_TYPE_PLUG
-
-
-def is_camera(device: dict[str, Any]) -> bool:
-    """Return true when discovery identifies a Wi-Fi camera."""
-    return device_type(device) == DEVICE_TYPE_CAMERA
