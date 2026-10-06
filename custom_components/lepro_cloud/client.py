@@ -221,7 +221,7 @@ class LeproCoordinator:
         self.devices = {str(device["did"]): device for device in devices if device.get("did")}
         info = _mqtt_info(profile)
         try:
-            key = load_mqtt_private_key()
+            key = await self.hass.async_add_executor_job(load_mqtt_private_key)
         except MqttKeyError as err:
             raise LeproMqttError(str(err)) from err
         certs = await self._resolve_certs(info, key, self.api.secret or "")
