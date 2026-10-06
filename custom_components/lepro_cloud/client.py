@@ -313,8 +313,10 @@ class LeproCoordinator:
         if _reason_failed(reason_code):
             _LOGGER.warning("Lepro MQTT connection failed: %s", reason_code)
             self.connected = False
+            self._schedule_device_updates()
             return
         self.connected = True
+        self._schedule_device_updates()
         for did, device in self.devices.items():
             for topic in subscription_topics(did):
                 client.subscribe(topic, qos=1)
@@ -334,6 +336,7 @@ class LeproCoordinator:
         _properties: mqtt.Properties | None,
     ) -> None:
         self.connected = False
+        self._schedule_device_updates()
         if not self._stopping and _reason_failed(reason_code):
             _LOGGER.debug("Lepro MQTT disconnected; paho will reconnect: %s", reason_code)
 
@@ -351,6 +354,15 @@ class LeproCoordinator:
         if isinstance(state, dict):
             self.states.setdefault(did, {}).update(state)
             self.hass.loop.call_soon_threadsafe(self._notify, did)
+
+    def _schedule_device_updates(self) -> None:
+        """Schedule availability updates from the MQTT callback thread."""
+        self.hass.loop.call_soon_threadsafe(self._notify_all)
+
+    def _notify_all(self) -> None:
+        """Notify every device listener after a transport state change."""
+        for did in self.devices:
+            self._notify(did)
 
     def _notify(self, did: str) -> None:
         for listener in tuple(self.listeners):

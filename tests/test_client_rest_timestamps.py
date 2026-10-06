@@ -238,3 +238,28 @@ def test_mqtt_setup_failure_cleans_up_certificates_and_is_retryable(
     assert coordinator.tmp is None
     assert coordinator.client is None
     assert created and not created[0].exists()
+
+
+def test_mqtt_disconnect_notifies_entities_of_availability_change() -> None:
+    client_module = _load_client_module()
+    queued: list[tuple[Any, tuple[Any, ...]]] = []
+
+    class Loop:
+        def call_soon_threadsafe(self, callback: Any, *args: Any) -> None:
+            queued.append((callback, args))
+
+    notified: list[str] = []
+    coordinator = client_module.LeproCoordinator.__new__(client_module.LeproCoordinator)
+    coordinator.hass = types.SimpleNamespace(loop=Loop())
+    coordinator.devices = {"light-1": {"did": "light-1"}}
+    coordinator.listeners = {notified.append}
+    coordinator.connected = True
+    coordinator._stopping = False
+
+    coordinator._on_disconnect(None, None, None, 1, None)
+
+    assert coordinator.connected is False
+    assert len(queued) == 1
+    callback, args = queued.pop()
+    callback(*args)
+    assert notified == ["light-1"]
