@@ -375,6 +375,33 @@ def test_tb1_uses_app_supplied_multipart_scenes() -> None:
     assert entity.effect == "Aurora"
 
 
+def test_striplight_uses_neonlight_scene_fallback() -> None:
+    light = _load_module("light")
+    coordinator = FakeCoordinator()
+    device = coordinator.devices["light-1"]
+    device.update(
+        {
+            "series": "S1-5",
+            "scenes": [
+                {
+                    "name": "Wave",
+                    "neonlight": {"dp": "d50", "res": "N01:P10001FF9700E1;"},
+                }
+            ],
+        }
+    )
+    coordinator.effect_types = {"S1-5": "striplight"}
+    entity = light.LeproCloudLight(coordinator, "light-1", device)
+    entity.hass = FakeHass()
+
+    assert entity.effect_list == ["Wave"]
+    asyncio.run(entity.async_turn_on(effect="Wave"))
+    assert coordinator.commands[-1] == (
+        "light-1",
+        {"d1": 1, "d2": 2, "d50": "N01:P10001FF9700E1;", "d52": 1000},
+    )
+
+
 def test_known_rgbic_uses_d52_before_its_first_state_report() -> None:
     light = _load_module("light")
     coordinator = FakeCoordinator()

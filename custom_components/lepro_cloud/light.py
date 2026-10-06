@@ -193,6 +193,8 @@ class LeproCloudLight(LightEntity):
             if not isinstance(scene, dict):
                 continue
             effect = scene.get(effect_type) if isinstance(effect_type, str) else None
+            if effect_type == "striplight" and not isinstance(effect, dict):
+                effect = scene.get("neonlight")
             if not isinstance(effect, dict):
                 effect = scene.get(DP_COLOR)
             if not isinstance(effect, dict):
