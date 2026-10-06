@@ -21,56 +21,39 @@ from .const import CONF_REGION, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+REGION_CHOICES = {
+    "north_america": "North America",
+    "europe": "Europe",
+    "far_east": "Far East",
+}
+
 
 def _account_unique_id(region: str, username: str) -> str:
     """Return the stable unique ID for a Lepro Cloud account."""
     return f"{region}:{username.lower()}"
 
 
-def _credentials_schema(*, username: str | None = None) -> vol.Schema:
+def _credentials_schema(
+    *, username: str | None = None, region: str | None = None
+) -> vol.Schema:
     """Return the Lepro Cloud credentials form schema."""
     username_field = (
         vol.Required(CONF_USERNAME, default=username)
         if username is not None
         else vol.Required(CONF_USERNAME)
     )
-    return vol.Schema(
-        {
-            username_field: str,
-            vol.Required(CONF_PASSWORD): str,
-        }
-    )
+    fields: dict[Any, Any] = {
+        username_field: str,
+        vol.Required(CONF_PASSWORD): str,
+    }
+    if region is not None:
+        fields[vol.Required(CONF_REGION, default=region)] = vol.In(REGION_CHOICES)
+    return vol.Schema(fields)
 
 
-def _region_from_hass_location(hass: Any) -> str:
-    """Choose Lepro's regional service from the HA server location."""
-    config = getattr(hass, "config", None)
-    try:
-        latitude = float(config.latitude)
-        longitude = float(config.longitude)
-    except (AttributeError, TypeError, ValueError):
-        latitude = longitude = None
-
-    if (
-        latitude is not None
-        and longitude is not None
-        and -90 <= latitude <= 90
-        and -180 <= longitude <= 180
-    ):
-        # Lepro divides service at broad geographic boundaries: the Americas,
-        # Europe/Africa/Middle East, and Asia/Oceania.
-        if longitude <= -30:
-            return "north_america"
-        if longitude >= 60:
-            return "far_east"
-        return "europe"
-
-    time_zone = str(getattr(config, "time_zone", ""))
-    if time_zone.startswith("America/"):
-        return "north_america"
-    if time_zone.startswith(("Asia/", "Australia/", "Pacific/")):
-        return "far_east"
-    return "europe"
+async def _async_account_region(hass: Any, username: str) -> str:
+    """Ask Lepro's bootstrap service for the account's API region."""
+    return await LeproApi.async_resolve_region(hass, username)
 
 
 def _flow_error(error: LeproError) -> str:
@@ -105,9 +88,9 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             username = user_input[CONF_USERNAME].strip()
             password = user_input[CONF_PASSWORD].strip()
-            region = _region_from_hass_location(self.hass)
 
             try:
+                region = await _async_account_region(self.hass, username)
                 await LeproApi(self.hass, region).async_login(username, password)
             except LeproApiError as err:
                 _log_api_error(err)
@@ -140,7 +123,7 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             username = user_input[CONF_USERNAME].strip()
             password = user_input[CONF_PASSWORD].strip()
-            region = _region_from_hass_location(self.hass)
+            region = user_input[CONF_REGION].strip()
 
             try:
                 await LeproApi(self.hass, region).async_login(username, password)
@@ -169,6 +152,9 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=_credentials_schema(username=entry.data[CONF_USERNAME]),
+            data_schema=_credentials_schema(
+                username=entry.data[CONF_USERNAME],
+                region=entry.data.get(CONF_REGION, "north_america"),
+            ),
             errors=errors,
         )

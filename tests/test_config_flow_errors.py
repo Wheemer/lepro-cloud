@@ -207,38 +207,67 @@ class _ConfigEntries:
         self.reloads.append(entry_id)
 
 
-def test_credentials_schema_asks_for_credentials_only() -> None:
+def test_initial_schema_asks_for_credentials_only() -> None:
     module = _load_config_flow_module()
 
     fields = {field.key: field.default for field in module._credentials_schema()}
     assert fields == {"username": None, "password": None}
 
 
-def test_region_comes_from_home_assistant_server_location() -> None:
+def test_reconfigure_schema_offers_the_current_region_as_an_override() -> None:
     module = _load_config_flow_module()
 
-    def hass(latitude: float, longitude: float) -> Any:
-        return types.SimpleNamespace(
-            config=types.SimpleNamespace(
-                latitude=latitude, longitude=longitude, time_zone="Etc/UTC"
-            )
-        )
+    schema = module._credentials_schema(username="user@example.com", region="far_east")
+    fields = {field.key: field.default for field in schema}
+    assert fields == {
+        "username": "user@example.com",
+        "password": None,
+        "region": "far_east",
+    }
+    region_field = next(field for field in schema if field.key == "region")
+    assert schema[region_field] == {
+        "north_america": "North America",
+        "europe": "Europe",
+        "far_east": "Far East",
+    }
 
-    assert module._region_from_hass_location(hass(47.56, -52.71)) == "north_america"
-    assert module._region_from_hass_location(hass(51.51, -0.13)) == "europe"
-    assert module._region_from_hass_location(hass(-33.87, 151.21)) == "far_east"
 
-
-def test_region_uses_server_timezone_only_when_location_is_unavailable() -> None:
+def test_initial_setup_resolves_account_region_before_login(monkeypatch: Any) -> None:
     module = _load_config_flow_module()
+    config_entries = _ConfigEntries([], reconfigure_entry=None)
+    flow = module.LeproCloudFlow()
+    flow.hass = types.SimpleNamespace(config_entries=config_entries)
 
-    hass = types.SimpleNamespace(
-        config=types.SimpleNamespace(time_zone="America/St_Johns")
+    async def account_region(hass: Any, username: str) -> str:
+        assert hass is flow.hass
+        assert username == "user@example.com"
+        return "europe"
+
+    class Api:
+        def __init__(self, hass: Any, region: str) -> None:
+            assert hass is flow.hass
+            assert region == "europe"
+
+        async def async_login(self, username: str, password: str) -> None:
+            assert username == "user@example.com"
+            assert password == "secret"
+
+    monkeypatch.setattr(module, "_async_account_region", account_region)
+    monkeypatch.setattr(module, "LeproApi", Api)
+
+    result = asyncio.run(
+        flow.async_step_user({"username": " user@example.com ", "password": " secret "})
     )
-    assert module._region_from_hass_location(hass) == "north_america"
+
+    assert result["type"] == "create_entry"
+    assert result["data"] == {
+        "username": "user@example.com",
+        "password": "secret",
+        "region": "europe",
+    }
 
 
-def test_reconfigure_form_prefills_username_not_password_or_region() -> None:
+def test_reconfigure_form_prefills_username_and_current_region() -> None:
     module = _load_config_flow_module()
     entry = _entry(
         entry_id="one",
@@ -248,8 +277,7 @@ def test_reconfigure_form_prefills_username_not_password_or_region() -> None:
     )
     flow = module.LeproCloudFlow()
     flow.hass = types.SimpleNamespace(
-        config_entries=_ConfigEntries([entry], reconfigure_entry=entry),
-        config=types.SimpleNamespace(latitude=51.51, longitude=-0.13),
+        config_entries=_ConfigEntries([entry], reconfigure_entry=entry)
     )
 
     result = asyncio.run(flow.async_step_reconfigure())
@@ -257,10 +285,14 @@ def test_reconfigure_form_prefills_username_not_password_or_region() -> None:
     assert result["type"] == "form"
     assert result["step_id"] == "reconfigure"
     fields = {field.key: field.default for field in result["data_schema"]}
-    assert fields == {"username": "user@example.com", "password": None}
+    assert fields == {
+        "username": "user@example.com",
+        "password": None,
+        "region": "europe",
+    }
 
 
-def test_reconfigure_uses_server_location_updates_and_reloads_existing_entry(
+def test_reconfigure_allows_manual_region_override_and_reloads_existing_entry(
     monkeypatch: Any,
 ) -> None:
     module = _load_config_flow_module()
@@ -272,10 +304,7 @@ def test_reconfigure_uses_server_location_updates_and_reloads_existing_entry(
     )
     config_entries = _ConfigEntries([entry], reconfigure_entry=entry)
     flow = module.LeproCloudFlow()
-    flow.hass = types.SimpleNamespace(
-        config_entries=config_entries,
-        config=types.SimpleNamespace(latitude=51.51, longitude=-0.13),
-    )
+    flow.hass = types.SimpleNamespace(config_entries=config_entries)
 
     class Api:
         def __init__(self, hass: Any, region: str) -> None:
@@ -293,6 +322,7 @@ def test_reconfigure_uses_server_location_updates_and_reloads_existing_entry(
             {
                 "username": " new@example.com ",
                 "password": " new-password ",
+                "region": "europe",
             }
         )
     )
@@ -327,8 +357,7 @@ def test_reconfigure_rejects_duplicate_other_entry_after_login(
     )
     flow = module.LeproCloudFlow()
     flow.hass = types.SimpleNamespace(
-        config_entries=_ConfigEntries([entry, duplicate], reconfigure_entry=entry),
-        config=types.SimpleNamespace(latitude=51.51, longitude=-0.13),
+        config_entries=_ConfigEntries([entry, duplicate], reconfigure_entry=entry)
     )
 
     class Api:
@@ -345,6 +374,7 @@ def test_reconfigure_rejects_duplicate_other_entry_after_login(
             {
                 "username": " TWO@example.com ",
                 "password": " new-password ",
+                "region": "europe",
             }
         )
     )

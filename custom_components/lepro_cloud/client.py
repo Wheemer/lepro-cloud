@@ -18,7 +18,7 @@ import paho.mqtt.client as mqtt
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import APP_NAME, APP_VERSION, DEFAULT_LANGUAGE, REGIONS
+from .const import APP_NAME, APP_VERSION, DEFAULT_LANGUAGE, REGION_DISCOVERY_HOST, REGIONS
 from .mqtt_key import MqttKeyError, load_mqtt_private_key
 from .protocol import (
     make_get_payload,
@@ -62,12 +62,29 @@ def _now_seconds() -> int:
 class LeproApi:
     """Minimal Lepro Cloud API client."""
 
-    def __init__(self, hass: HomeAssistant, region: str) -> None:
+    def __init__(
+        self, hass: HomeAssistant, region: str | None = None, *, host: str | None = None
+    ) -> None:
         self._session = async_get_clientsession(hass)
-        self._host = REGIONS[region]
+        self._host = host or REGIONS[region]
         self.token: str | None = None
         self.uid: str | None = None
         self.secret: str | None = None
+
+    @classmethod
+    async def async_resolve_region(cls, hass: HomeAssistant, username: str) -> str:
+        """Resolve the account's regional API host using Lepro's bootstrap API."""
+        bootstrap = cls(hass, host=REGION_DISCOVERY_HOST)
+        region_info = await bootstrap._request(
+            "POST",
+            "/user/region",
+            {"account": username, "timestamp": str(_now_seconds())},
+        )
+        api_host = str(region_info.get("apiHost") or "")
+        for region, host in REGIONS.items():
+            if host == api_host:
+                return region
+        raise LeproResponseError("Lepro returned an unknown account region")
 
     def _headers(self) -> dict[str, str]:
         headers = {

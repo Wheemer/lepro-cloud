@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Lepro Cloud",
-        "description": "Sign in with your Lepro Home account. The Lepro Cloud region is selected from this Home Assistant server's location.",
+        "description": "Sign in with your Lepro Home account. Lepro selects the account's regional server automatically.",
         "data": {
           "username": "Email or phone",
           "password": "Password"
@@ -11,10 +11,11 @@
       },
       "reconfigure": {
         "title": "Update Lepro Cloud",
-        "description": "Update your Lepro Home account credentials. The Lepro Cloud region is selected from this Home Assistant server's location.",
+        "description": "Update your Lepro Home account credentials or change the selected region if it is incorrect.",
         "data": {
           "username": "Email or phone",
-          "password": "Password"
+          "password": "Password",
+          "region": "Region"
         }
       }
     },
