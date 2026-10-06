@@ -9,15 +9,26 @@
           "password": "Password",
           "region": "Region"
         }
+      },
+      "reconfigure": {
+        "title": "Update Lepro Cloud",
+        "description": "Update the Lepro Cloud account credentials and region.",
+        "data": {
+          "username": "Email or phone",
+          "password": "Password",
+          "region": "Region"
+        }
       }
     },
     "error": {
+      "already_configured": "This Lepro Cloud account and region are already configured.",
       "cannot_connect": "Could not connect to Lepro Cloud.",
       "invalid_auth": "Invalid Lepro Cloud credentials.",
       "invalid_response": "Lepro Cloud rejected the login request."
     },
     "abort": {
-      "already_configured": "This Lepro Cloud account and region are already configured."
+      "already_configured": "This Lepro Cloud account and region are already configured.",
+      "reconfigure_successful": "Lepro Cloud configuration updated."
     }
   }
 }
