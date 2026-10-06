@@ -279,7 +279,7 @@ def test_light_turn_on_honors_brightness_color_temp_and_hs_color() -> None:
     asyncio.run(entity.async_turn_on(hs_color=(120, 50), brightness=255))
     assert coordinator.commands[-1] == (
         "light-1",
-        {"d1": 1, "d2": 1, "d3": 1000, "d5": "007801F403E8"},
+        {"d1": 1, "d2": 1, "d5": "007801F403E8"},
     )
 
 
@@ -318,6 +318,16 @@ def test_light_uses_app_supplied_scenes_as_effects() -> None:
         },
     )
     assert entity.effect == "Aurora"
+
+
+def test_known_rgbic_uses_d52_before_its_first_state_report() -> None:
+    light = _load_module("light")
+    coordinator = FakeCoordinator()
+    device = coordinator.devices["light-1"]
+    device["series"] = "S1-10"
+    entity = light.LeproCloudLight(coordinator, "light-1", device)
+
+    assert entity._brightness_datapoint == "d52"
 
 
 def test_rgbic_light_uses_its_own_brightness_datapoint() -> None:

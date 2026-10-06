@@ -162,17 +162,16 @@ def lepro_temperature_to_kelvin(value: Any) -> int | None:
 
 
 def color_payload(hs_color: tuple[float, float], ha_brightness: Any) -> dict[str, Any]:
-    """Build a color-mode command using the verified d5 HSV datapoint."""
+    """Build the app's DpColourValue command (d2 plus HSV d5)."""
     brightness = ha_to_lepro_brightness(ha_brightness)
     return {
         DP_WORK_MODE: WORK_MODE_COLOR,
-        DP_BRIGHTNESS: brightness,
         DP_COLOR: hs_to_lepro_hsv(hs_color, brightness),
     }
 
 
 def hs_to_lepro_hsv(hs_color: tuple[float, float], value: Any = MAX_COLOR_VALUE) -> str:
-    """Convert HA HS color to Lepro's 12-digit lowercase HSV hex string."""
+    """Convert HA HS color to Lepro's 12-digit uppercase HSV hex string."""
     hue, saturation = hs_color
     hsv = (
         round(max(0.0, min(360.0, float(hue)))),
@@ -183,7 +182,7 @@ def hs_to_lepro_hsv(hs_color: tuple[float, float], value: Any = MAX_COLOR_VALUE)
 
 
 def parse_lepro_hsv(value: Any) -> tuple[int, int, int] | None:
-    """Parse Lepro d5 as exactly 12 lowercase HSV hex digits."""
+    """Parse Lepro d5 as exactly 12 hexadecimal HSV digits."""
     if not isinstance(value, str) or not HSV_HEX_RE.fullmatch(value):
         return None
     hsv = tuple(int(value[index : index + 4], 16) for index in range(0, 12, 4))

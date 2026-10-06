@@ -37,6 +37,7 @@ from .protocol import (
     lepro_hsv_to_hs,
     lepro_temperature_to_kelvin,
     on_payload,
+    state_datapoints_for_series,
     state_is_on,
     white_payload,
 )
@@ -111,7 +112,11 @@ class LeproCloudLight(LightEntity):
     def _brightness_datapoint(self) -> str:
         """Select the reported brightness datapoint for this product family."""
         state = self.coordinator.states.get(self.device_id, {})
-        if DP_RGBIC_BRIGHTNESS in state:
+        series = self.device.get("series") or self.device.get("pid")
+        if (
+            DP_RGBIC_BRIGHTNESS in state
+            or DP_RGBIC_BRIGHTNESS in state_datapoints_for_series(series)
+        ):
             return DP_RGBIC_BRIGHTNESS
         return DP_BRIGHTNESS
 

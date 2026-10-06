@@ -133,7 +133,6 @@ def test_hs_rgb_helpers_convert_lepro_hsv() -> None:
 def test_color_payload_uses_verified_datapoints() -> None:
     assert color_payload((240, 75), 128) == {
         DP_WORK_MODE: WORK_MODE_COLOR,
-        DP_BRIGHTNESS: 502,
         DP_COLOR: "00F002EE01F6",
     }
 
