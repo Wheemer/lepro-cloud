@@ -33,6 +33,7 @@ All discovered Lepro Wi-Fi lights are added as light entities; controls are expo
 For the REST, MQTT, and datapoint reference, see [Protocol reference](docs/PROTOCOL.md).
 
 ## Installation
+[![Add this repository to HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Wheemer&repository=lepro-cloud&category=integration)
 
 Copy `custom_components/lepro_cloud` into your Home Assistant `custom_components` directory or install through HACS as a custom repository. Restart Home Assistant, then add **Lepro Cloud** from **Settings > Devices & services**.
 
