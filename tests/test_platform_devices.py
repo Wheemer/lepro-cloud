@@ -447,3 +447,4 @@ def test_light_updates_brightness_for_hsv_scene_payloads() -> None:
         "light-1",
         {"d1": 1, "d2": 2, "d5": "007801F401F6"},
     )
+    assert entity.effect == "Gradient"

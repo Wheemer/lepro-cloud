@@ -167,7 +167,16 @@ class LeproCloudLight(LightEntity):
     def effect(self) -> str | None:
         """Return the selected scene when its exact payload is reported."""
         for name, (datapoint, value) in self._scene_effects.items():
-            if self.coordinator.states.get(self.device_id, {}).get(datapoint) == value:
+            current = self.coordinator.states.get(self.device_id, {}).get(datapoint)
+            if current == value:
+                return name
+            if (
+                datapoint == DP_COLOR
+                and isinstance(current, str)
+                and re.fullmatch(r"[0-9a-fA-F]{12}", value)
+                and re.fullmatch(r"[0-9a-fA-F]{12}", current)
+                and current[:8].lower() == value[:8].lower()
+            ):
                 return name
         return None
 
