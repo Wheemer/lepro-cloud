@@ -1,0 +1,13 @@
+{
+  "domain": "lepro_cloud",
+  "name": "Lepro Cloud",
+  "after_dependencies": [],
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/Wheemer/lepro-cloud",
+  "integration_type": "hub",
+  "iot_class": "cloud_push",
+  "issue_tracker": "https://github.com/Wheemer/lepro-cloud/issues",
+  "requirements": ["paho-mqtt==2.1.0"],
+  "version": "0.2.0"
+}

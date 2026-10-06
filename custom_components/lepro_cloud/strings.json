@@ -1,0 +1,23 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Lepro Cloud",
+        "description": "Connect to Lepro Cloud over Wi-Fi. Bluetooth and local LAN control are not used.",
+        "data": {
+          "username": "Email or phone",
+          "password": "Password",
+          "region": "Region"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to Lepro Cloud.",
+      "invalid_auth": "Invalid Lepro Cloud credentials.",
+      "invalid_response": "Lepro Cloud rejected the login request."
+    },
+    "abort": {
+      "already_configured": "This Lepro Cloud account and region are already configured."
+    }
+  }
+}

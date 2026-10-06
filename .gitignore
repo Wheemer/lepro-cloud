@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Private APK-derived Lepro MQTT assets. These must not be committed or archived.
+.lepro_private/
+custom_components/lepro_cloud/_private/
+*.pem
+*.key
+*.p12
+*.pfx
+*.apk
+*.so

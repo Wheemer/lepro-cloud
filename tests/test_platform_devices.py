@@ -1,0 +1,204 @@
+"""Tests for Home Assistant platform device classification and plug switches."""
+
+from __future__ import annotations
+
+import asyncio
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
+import sys
+import types
+from typing import Any, Callable
+
+
+PACKAGE_PATH = Path(__file__).resolve().parents[1] / "custom_components" / "lepro_cloud"
+
+
+def _install_platform_import_stubs() -> None:
+    homeassistant = types.ModuleType("homeassistant")
+    homeassistant.__path__ = []
+
+    light_component = types.ModuleType("homeassistant.components.light")
+    light_component.ATTR_BRIGHTNESS = "brightness"
+    light_component.ColorMode = types.SimpleNamespace(BRIGHTNESS="brightness")
+    light_component.LightEntity = RecordingEntity
+
+    switch_component = types.ModuleType("homeassistant.components.switch")
+    switch_component.SwitchEntity = RecordingEntity
+
+    config_entries = types.ModuleType("homeassistant.config_entries")
+    config_entries.ConfigEntry = object
+
+    homeassistant_core = types.ModuleType("homeassistant.core")
+    homeassistant_core.HomeAssistant = object
+
+    entity_platform = types.ModuleType("homeassistant.helpers.entity_platform")
+    entity_platform.AddEntitiesCallback = Callable[..., None]
+
+    homeassistant_const = types.ModuleType("homeassistant.const")
+    homeassistant_const.Platform = types.SimpleNamespace(LIGHT="light", SWITCH="switch")
+
+    paho = types.ModuleType("paho")
+    paho_mqtt = types.ModuleType("paho.mqtt")
+    paho_mqtt_client = types.ModuleType("paho.mqtt.client")
+    paho_mqtt_client.CallbackAPIVersion = types.SimpleNamespace(VERSION2=2)
+    paho_mqtt_client.MQTT_ERR_SUCCESS = 0
+    paho_mqtt_client.Client = object
+    paho_mqtt_client.ConnectFlags = object
+    paho_mqtt_client.DisconnectFlags = object
+    paho_mqtt_client.MQTTMessage = object
+    paho_mqtt_client.Properties = object
+    paho_mqtt_client.ReasonCode = object
+
+    sys.modules["homeassistant"] = homeassistant
+    sys.modules.setdefault(
+        "homeassistant.components", types.ModuleType("homeassistant.components")
+    )
+    sys.modules["homeassistant.components.light"] = light_component
+    sys.modules["homeassistant.components.switch"] = switch_component
+    sys.modules["homeassistant.config_entries"] = config_entries
+    sys.modules["homeassistant.core"] = homeassistant_core
+    sys.modules.setdefault("homeassistant.helpers", types.ModuleType("homeassistant.helpers"))
+    sys.modules["homeassistant.helpers.entity_platform"] = entity_platform
+    sys.modules["homeassistant.const"] = homeassistant_const
+    sys.modules.setdefault("paho", paho)
+    sys.modules["paho.mqtt"] = paho_mqtt
+    sys.modules["paho.mqtt.client"] = paho_mqtt_client
+
+    aiohttp_client = types.ModuleType("homeassistant.helpers.aiohttp_client")
+    aiohttp_client.async_get_clientsession = lambda hass: None
+    sys.modules["homeassistant.helpers.aiohttp_client"] = aiohttp_client
+
+
+def _load_module(name: str) -> Any:
+    _install_platform_import_stubs()
+    package = types.ModuleType("custom_components.lepro_cloud")
+    package.__path__ = [str(PACKAGE_PATH)]
+    sys.modules.setdefault("custom_components", types.ModuleType("custom_components"))
+    sys.modules["custom_components.lepro_cloud"] = package
+
+    spec = spec_from_file_location(
+        f"custom_components.lepro_cloud.{name}", PACKAGE_PATH / f"{name}.py"
+    )
+    assert spec and spec.loader
+    module = module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class RecordingEntity:
+    def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+        self.write_count = 0
+        self.remove_callbacks: list[Callable[[], None]] = []
+
+    def async_write_ha_state(self) -> None:
+        self.write_count = getattr(self, "write_count", 0) + 1
+
+    def async_on_remove(self, callback: Callable[[], None]) -> None:
+        if not hasattr(self, "remove_callbacks"):
+            self.remove_callbacks = []
+        self.remove_callbacks.append(callback)
+
+
+class FakeHass:
+    async def async_add_executor_job(self, target: Callable[..., Any], *args: Any) -> Any:
+        return target(*args)
+
+
+class FakeCoordinator:
+    def __init__(self) -> None:
+        self.devices = {
+            "light-1": {"did": "light-1", "type": 1, "name": "Light"},
+            "plug-1": {"did": "plug-1", "type": 2, "name": "Plug"},
+            "camera-1": {"did": "camera-1", "type": 3, "name": "Camera"},
+            "legacy-1": {"did": "legacy-1", "name": "Unknown"},
+        }
+        self.states: dict[str, dict[str, Any]] = {}
+        self.connected = True
+        self.commands: list[tuple[str, dict[str, Any]]] = []
+        self.listeners: list[Callable[[str], None]] = []
+
+    def command(self, did: str, values: dict[str, Any]) -> None:
+        self.commands.append((did, values))
+
+    def listen(self, listener: Callable[[str], None]) -> Callable[[], None]:
+        self.listeners.append(listener)
+        return lambda: self.listeners.remove(listener)
+
+
+def test_platforms_expose_only_verified_device_types() -> None:
+    device = _load_module("device")
+    light = _load_module("light")
+    switch = _load_module("switch")
+
+    assert device.device_type({"type": 1}) == device.DEVICE_TYPE_LIGHT
+    assert device.device_type({"deviceType": "2"}) == device.DEVICE_TYPE_PLUG
+    assert device.device_type({"devType": 3}) == device.DEVICE_TYPE_CAMERA
+    assert device.device_type({"type": "camera"}) is None
+    assert device.device_type({}) is None
+    assert device.is_light({"type": 1})
+    assert device.is_plug({"type": 2})
+    assert device.is_camera({"type": 3})
+
+    assert light._is_supported_light({"type": 1})
+    assert light._is_supported_light({"deviceType": "1"})
+    assert not light._is_supported_light({"type": 2})
+    assert not light._is_supported_light({"type": 3})
+    assert not light._is_supported_light({})
+
+    assert switch._is_supported_switch({"type": 2})
+    assert switch._is_supported_switch({"devType": "2"})
+    assert not switch._is_supported_switch({"type": 1})
+    assert not switch._is_supported_switch({"type": 3})
+    assert not switch._is_supported_switch({})
+
+
+def test_setup_entry_adds_lights_and_switches_without_cameras() -> None:
+    light = _load_module("light")
+    switch = _load_module("switch")
+    coordinator = FakeCoordinator()
+    entry = types.SimpleNamespace(runtime_data=coordinator)
+
+    added_lights: list[Any] = []
+    added_switches: list[Any] = []
+
+    asyncio.run(
+        light.async_setup_entry(
+            FakeHass(), entry, lambda entities: added_lights.extend(entities)
+        )
+    )
+    asyncio.run(
+        switch.async_setup_entry(
+            FakeHass(), entry, lambda entities: added_switches.extend(entities)
+        )
+    )
+
+    assert [entity.device_id for entity in added_lights] == ["light-1"]
+    assert [entity.device_id for entity in added_switches] == ["plug-1"]
+
+
+def test_plug_switch_uses_d1_state_command_and_availability() -> None:
+    switch = _load_module("switch")
+    coordinator = FakeCoordinator()
+    entity = switch.LeproCloudPlugSwitch(
+        coordinator, "plug-1", coordinator.devices["plug-1"]
+    )
+    entity.hass = FakeHass()
+
+    assert entity.available is True
+    assert entity.is_on is None
+
+    asyncio.run(entity.async_turn_on())
+
+    assert coordinator.commands == [("plug-1", {"d1": 1})]
+    assert coordinator.states["plug-1"]["d1"] == 1
+    assert entity.is_on is True
+    assert entity.write_count == 1
+
+    coordinator.states["plug-1"]["online"] = 0
+    assert entity.available is False
+
+    asyncio.run(entity.async_turn_off())
+
+    assert coordinator.commands[-1] == ("plug-1", {"d1": 0})
+    assert entity.is_on is False
