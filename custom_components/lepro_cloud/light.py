@@ -185,8 +185,6 @@ class LeproCloudLight(LightEntity):
         """Map app-provided scene names to their verified MQTT payloads."""
         series = str(self.device.get("series") or self.device.get("pid") or "").upper()
         effect_type = self.coordinator.effect_types.get(series) or self.device.get("effect")
-        if not isinstance(effect_type, str):
-            return {}
         effects: dict[str, tuple[str, str]] = {}
         scenes = self.device.get("scenes")
         if not isinstance(scenes, list):
@@ -194,7 +192,9 @@ class LeproCloudLight(LightEntity):
         for index, scene in enumerate(scenes, start=1):
             if not isinstance(scene, dict):
                 continue
-            effect = scene.get(effect_type)
+            effect = scene.get(effect_type) if isinstance(effect_type, str) else None
+            if not isinstance(effect, dict):
+                effect = scene.get(DP_COLOR)
             if not isinstance(effect, dict):
                 continue
             datapoint = effect.get("dp") or effect.get("command_type")
