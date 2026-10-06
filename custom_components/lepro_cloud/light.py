@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from homeassistant.components.light import (
@@ -189,7 +190,12 @@ class LeproCloudLight(LightEntity):
                 continue
             datapoint = effect.get("dp") or effect.get("command_type")
             value = effect.get("res")
-            if datapoint not in ("d6", "d50") or not isinstance(value, str) or not value:
+            if (
+                not isinstance(datapoint, str)
+                or re.fullmatch(r"d[0-9]+", datapoint) is None
+                or not isinstance(value, str)
+                or not value
+            ):
                 continue
             name = (
                 scene.get("name")
@@ -238,13 +244,12 @@ class LeproCloudLight(LightEntity):
         brightness = kwargs.get(ATTR_BRIGHTNESS, self.brightness or 255)
         if ATTR_EFFECT in kwargs and kwargs[ATTR_EFFECT] in self._scene_effects:
             datapoint, value = self._scene_effects[kwargs[ATTR_EFFECT]]
-            values.update(
-                {
-                    DP_WORK_MODE: 2,
-                    datapoint: value,
-                    self._brightness_datapoint: ha_to_lepro_brightness(brightness),
-                }
-            )
+            values.update({DP_WORK_MODE: 2, datapoint: value})
+            # The app sends scene brightness separately only for d50 RGBIC
+            # payloads. All other scene datapoints already encode their own
+            # values and must remain byte-for-byte intact.
+            if datapoint == "d50":
+                values[self._brightness_datapoint] = ha_to_lepro_brightness(brightness)
         elif ATTR_HS_COLOR in kwargs:
             values.update(color_payload(kwargs[ATTR_HS_COLOR], brightness))
         elif ATTR_COLOR_TEMP_KELVIN in kwargs:

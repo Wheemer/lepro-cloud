@@ -397,3 +397,27 @@ def test_rgbic_light_uses_its_own_brightness_datapoint() -> None:
     assert entity.brightness == 128
     asyncio.run(entity.async_turn_on(brightness=128))
     assert coordinator.commands[-1] == ("light-1", {"d1": 1, "d2": 2, "d52": 502})
+
+
+def test_light_preserves_non_d50_scene_payloads() -> None:
+    light = _load_module("light")
+    coordinator = FakeCoordinator()
+    device = coordinator.devices["light-1"]
+    device.update(
+        {
+            "series": "B1",
+            "scenes": [
+                {
+                    "name": "Breath",
+                    "smartbulb": {"dp": "d6", "res": "0001"},
+                }
+            ],
+        }
+    )
+    coordinator.effect_types = {"B1": "smartbulb"}
+    entity = light.LeproCloudLight(coordinator, "light-1", device)
+    entity.hass = FakeHass()
+
+    assert entity.effect_list == ["Breath"]
+    asyncio.run(entity.async_turn_on(effect="Breath"))
+    assert coordinator.commands[-1] == ("light-1", {"d1": 1, "d2": 2, "d6": "0001"})
