@@ -41,9 +41,8 @@ scripts.yaml
 .env.*
 *.log
 
-# Private APK-derived Lepro MQTT assets. These must not be committed or archived.
+# Local MQTT override files.
 .lepro_private/
-custom_components/lepro_cloud/_private/
 *.pem
 *.key
 *.p12

@@ -48,12 +48,6 @@ Auto-Toggle Lights as configuration entities.
 - RGBIC datapoints: `d50` scene, `d52` brightness, and `d53` strip length where used.
 - P1 plug settings: `d100` Power Memory, `d101` Indicator Light, and `d102` Button Lock.
 
-## MQTT TLS Key
-
-Place the required client key at `custom_components/lepro_cloud/_private/mqtt_client_key.pem`,
-`.lepro_private/mqtt_client_key.pem`, or set `LEPRO_MQTT_CLIENT_KEY_FILE` to its location.
-Keep this credential out of source control.
-
 ## Installation
 
 Copy `custom_components/lepro_cloud` into your Home Assistant `custom_components` directory or install through HACS as a custom repository. Restart Home Assistant, then add **Lepro Cloud** from **Settings > Devices & services**.
