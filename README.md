@@ -21,27 +21,23 @@ Lepro trademarks, names, logos, icons, product artwork, and any other Lepro-owne
 assets remain the property of their respective owners and are included only in
 this private repository.
 
-## Scope
-
-- Uses Lepro Cloud REST APIs and Lepro MQTT over TLS.
-- Exposes verified Wi-Fi type `1` devices as Home Assistant lights with on/off and brightness.
-- Exposes verified Wi-Fi type `2` devices as Home Assistant switches using the shared `d1` switch datapoint.
-- Discovers Wi-Fi type `3` cameras but does not expose a `CameraEntity`; camera media transport is unsupported until the streaming protocol is verified.
-
 ## Current Support
 
-| Lepro Wi-Fi type | Home Assistant platform | Status |
+| Lepro Wi-Fi type | Home Assistant platform | Controls |
 | --- | --- | --- |
-| `1` light | `light` | On/off via `d1`, brightness via `d3` |
-| `2` plug | `switch` | On/off via `d1` |
-| `3` camera | None | Discovery only; media transport unsupported |
+| `1` light | `light` | On/off, brightness, RGB colour, colour temperature, and app-provided scenes |
+| `2` P1 plug | `switch` | On/off, Button Lock, Power Memory, and Indicator Light |
+
+RGBIC, RGBIC-length, and STV1 light families use the product-specific state
+datapoints observed in the Lepro Home app. STV1 also exposes Status LED and
+Auto-Toggle Lights as configuration entities.
 
 ## Verified Protocol Summary
 
 - Regional REST hosts:
   - North America: `api-na-iot.lepro.com`
   - Europe: `api-eu-iot.lepro.com`
-  - Far East: `api-fe-iot.lepro.com`
+  - Asia: `api-fe-iot.lepro.com`
 - Login: `POST /user/login` with `platform=2`, `account`, `password`, `mac`, `timestamp`, `language`, and `fcmToken`.
 - Profile: `GET /user/profile` supplies MQTT `root`, `cert`, `host`, and `port`.
 - Discovery:
@@ -51,15 +47,11 @@ this private repository.
   - Publish get: `le/{deviceId}/prp/get`
   - Publish set: `le/{deviceId}/prp/set`
   - Subscribe: `le/{deviceId}/prp/rpt`, `le/{deviceId}/prp/getr`, `le/{deviceId}/prp/setr`
-- Verified Wi-Fi device types:
-  - `1`: light
-  - `2`: plug
-  - `3`: camera
-- Shared light/plug datapoints:
-  - `d1`: switch, `1` on and `0` off
-- Basic light datapoints:
-  - `d3`: brightness, Lepro scale `1..1000`
-  - `d2`: work mode included with brightness commands as observed in the app model
+- Shared on/off datapoint: `d1` (`1` on, `0` off).
+- Light datapoints: `d2` work mode, `d3` brightness, `d4` colour temperature,
+  and `d5` HSV colour.
+- RGBIC datapoints: `d50` scene, `d52` brightness, and `d53` strip length where used.
+- P1 plug settings: `d100` Power Memory, `d101` Indicator Light, and `d102` Button Lock.
 
 ## MQTT Key Note
 
