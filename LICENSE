@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 Lepro Cloud for Home Assistant contributors
+Copyright (c) 2026 Steve Reid
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,9 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-This license applies to clean-room integration code and repository
-documentation. Lepro trademarks, names, logos, icons, product artwork, and any
-other Lepro-owned assets remain the property of their respective owners and
-are included only in this private repository for private interoperability and
-documentation purposes.
