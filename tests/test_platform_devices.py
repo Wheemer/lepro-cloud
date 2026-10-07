@@ -26,6 +26,7 @@ def _install_platform_import_stubs() -> None:
         BRIGHTNESS="brightness", COLOR_TEMP="color_temp", HS="hs"
     )
     light_component.LightEntity = RecordingEntity
+    light_component.LightEntityFeature = type("LightEntityFeature", (int,), {"EFFECT": 1})
 
     switch_component = types.ModuleType("homeassistant.components.switch")
     switch_component.SwitchEntity = RecordingEntity
@@ -338,6 +339,22 @@ def test_light_turn_on_honors_brightness_color_temp_and_hs_color() -> None:
     )
 
 
+def test_scene_mode_uses_a_supported_color_mode() -> None:
+    light = _load_module("light")
+    coordinator = FakeCoordinator()
+    coordinator.states["light-1"] = {
+        "d2": 2,
+        "d4": 500,
+        "d5": "007801F403E8",
+    }
+    entity = light.LeproCloudLight(
+        coordinator, "light-1", coordinator.devices["light-1"]
+    )
+
+    assert entity.supported_color_modes == {"hs", "color_temp"}
+    assert entity.color_mode == "hs"
+
+
 def test_tb1_uses_app_supplied_multipart_scenes() -> None:
     light = _load_module("light")
     coordinator = FakeCoordinator()
@@ -362,6 +379,7 @@ def test_tb1_uses_app_supplied_multipart_scenes() -> None:
     entity.hass = FakeHass()
 
     assert entity.effect_list == ["Aurora"]
+    assert entity.supported_features == 1
     asyncio.run(entity.async_turn_on(effect="Aurora"))
     assert coordinator.commands[-1] == (
         "light-1",

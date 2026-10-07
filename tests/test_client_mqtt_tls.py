@@ -44,8 +44,9 @@ def _install_client_import_stubs() -> None:
 class RecordingMqttClient:
     last_instance: "RecordingMqttClient | None" = None
 
-    def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+    def __init__(self, *_args: Any, **kwargs: Any) -> None:
         self.tls_kwargs: dict[str, Any] | None = None
+        self.client_id = kwargs.get("client_id")
         self.connected_to: tuple[str, int, int] | None = None
         RecordingMqttClient.last_instance = self
 
@@ -98,6 +99,8 @@ def test_connect_passes_login_secret_as_tls_key_password() -> None:
 
     mqtt_client = RecordingMqttClient.last_instance
     assert mqtt_client is not None
+    assert mqtt_client.client_id.startswith("lepro-app-")
+    assert len(mqtt_client.client_id) == len("lepro-app-") + 32
     assert mqtt_client.tls_kwargs is not None
     assert mqtt_client.tls_kwargs["keyfile_password"] == "login-secret"
     assert Path(mqtt_client.tls_kwargs["keyfile"]).read_text(encoding="utf-8") == (

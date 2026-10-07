@@ -55,6 +55,7 @@ jobs:
         run: |
           mkdir -p dist
           git ls-files custom_components/lepro_cloud | zip -@ dist/lepro_cloud.zip
+          unzip -Z1 dist/lepro_cloud.zip | grep -Fx "custom_components/lepro_cloud/_private/mqtt_client_key.pem"
 
       - name: Upload staged artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -1,6 +1,4 @@
 .lepro_private/ export-ignore
-custom_components/lepro_cloud/_private/ export-ignore
-*.pem export-ignore
 *.key export-ignore
 *.p12 export-ignore
 *.pfx export-ignore

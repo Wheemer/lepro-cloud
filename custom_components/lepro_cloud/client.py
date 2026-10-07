@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from collections.abc import Callable, Mapping
 from contextlib import suppress
 import json
@@ -347,7 +348,12 @@ class LeproCoordinator:
 
             client = mqtt.Client(
                 mqtt.CallbackAPIVersion.VERSION2,
-                client_id=f"ha-lepro-{self.api.uid or _now_seconds()}",
+                client_id=(
+                    "lepro-app-"
+                    + hashlib.sha256(
+                        f"ha-lepro-{self.api.uid or _now_seconds()}".encode()
+                    ).hexdigest()[:32]
+                ),
                 clean_session=True,
             )
             client.tls_set(

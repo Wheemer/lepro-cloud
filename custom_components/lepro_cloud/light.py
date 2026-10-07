@@ -12,6 +12,7 @@ from homeassistant.components.light import (
     ATTR_HS_COLOR,
     ColorMode,
     LightEntity,
+    LightEntityFeature,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -155,7 +156,20 @@ class LeproCloudLight(LightEntity):
             return ColorMode.HS
         if work_mode == WORK_MODE_WHITE and ColorMode.COLOR_TEMP in supported:
             return ColorMode.COLOR_TEMP
+        if ColorMode.HS in supported:
+            return ColorMode.HS
+        if ColorMode.COLOR_TEMP in supported:
+            return ColorMode.COLOR_TEMP
         return ColorMode.BRIGHTNESS
+
+    @property
+    def supported_features(self) -> LightEntityFeature:
+        """Return the features backed by app-provided device data."""
+        return (
+            LightEntityFeature.EFFECT
+            if self._scene_effects
+            else LightEntityFeature(0)
+        )
 
     @property
     def effect_list(self) -> list[str] | None:
