@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://www.hacs.xyz/docs/faq/custom_repositories/"><img src="https://img.shields.io/badge/HACS-CUSTOM-41BDF5?style=for-the-badge&logo=home-assistant&logoColor=white&labelColor=555555" alt="HACS Custom"></a>
   <a href="https://www.home-assistant.io/"><img src="https://img.shields.io/badge/HOME%20ASSISTANT-2024.6%2B-41BDF5?style=for-the-badge&logo=home-assistant&logoColor=white&labelColor=555555" alt="Home Assistant 2024.6 or newer"></a>
-  <a href="https://github.com/Wheemer/lepro-cloud/releases"><img src="https://img.shields.io/github/downloads/Wheemer/lepro-cloud/total?style=for-the-badge&label=DOWNLOADS&labelColor=555555&cacheSeconds=300&v=0.1.0" alt="GitHub release downloads"></a>
+  <a href="https://github.com/Wheemer/lepro-cloud/releases"><img src="https://img.shields.io/github/downloads/Wheemer/lepro-cloud/total?style=for-the-badge&label=DOWNLOADS&labelColor=555555&cacheSeconds=300&v=0.1.1" alt="GitHub release downloads"></a>
   <img src="https://img.shields.io/badge/PLATFORMS-LIGHT%20%7C%20PLUG-22C55E?style=for-the-badge&logo=home-assistant&logoColor=white&labelColor=555555" alt="Light and plug platforms">
 </p>
 
