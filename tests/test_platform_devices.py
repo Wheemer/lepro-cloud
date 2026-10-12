@@ -143,6 +143,7 @@ def test_platforms_expose_only_verified_device_types() -> None:
     assert device.device_type({"type": 1}) == device.DEVICE_TYPE_LIGHT
     assert device.device_type({"deviceType": "2"}) == device.DEVICE_TYPE_PLUG
     assert device.device_type({"type": "camera"}) is None
+
     assert device.device_type({}) is None
     assert device.is_light({"type": 1})
     assert device.is_plug({"type": 2})
@@ -156,6 +157,13 @@ def test_platforms_expose_only_verified_device_types() -> None:
     assert switch._is_supported_switch({"devType": "2"})
     assert not switch._is_supported_switch({"type": 1})
     assert not switch._is_supported_switch({})
+
+
+def test_device_name_hides_lepro_appended_identifier() -> None:
+    device = _load_module("device")
+
+    assert device.device_name({"name": "girls room_U5O5"}) == "girls room"
+    assert device.device_name({"name": "Kitchen_TV"}) == "Kitchen_TV"
 
 
 def test_setup_entry_adds_lights_and_switches() -> None:
