@@ -19,7 +19,14 @@ import paho.mqtt.client as mqtt
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import APP_NAME, APP_VERSION, DEFAULT_LANGUAGE, REGION_DISCOVERY_HOST, REGIONS
+from .const import (
+    APP_NAME,
+    APP_VERSION,
+    DEFAULT_LANGUAGE,
+    DOMAIN,
+    REGION_DISCOVERY_HOST,
+    REGIONS,
+)
 from .mqtt_key import MqttKeyError, load_mqtt_private_key
 from .protocol import (
     make_get_payload,
@@ -227,6 +234,19 @@ class LeproApi:
             raise LeproApiError(f"Unable to download Lepro certificate from {url}") from err
 
 
+_PENDING_APIS = f"{DOMAIN}_pending_apis"
+
+
+def cache_authenticated_api(hass: HomeAssistant, account_id: str, api: LeproApi) -> None:
+    """Keep a just-authenticated API session for the first entry setup."""
+    hass.data.setdefault(_PENDING_APIS, {})[account_id] = api
+
+
+def take_authenticated_api(hass: HomeAssistant, account_id: str) -> LeproApi | None:
+    """Consume a config-flow API session, if this is its first entry setup."""
+    return hass.data.get(_PENDING_APIS, {}).pop(account_id, None)
+
+
 def _as_list(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
     value = payload.get("list", payload)
     if isinstance(value, list):
@@ -237,10 +257,12 @@ def _as_list(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
 class LeproCoordinator:
     """Coordinates Lepro REST discovery and MQTT state for one config entry."""
 
-    def __init__(self, hass: HomeAssistant, entry: Any) -> None:
+    def __init__(
+        self, hass: HomeAssistant, entry: Any, api: LeproApi | None = None
+    ) -> None:
         self.hass = hass
         self.entry = entry
-        self.api = LeproApi(hass, entry.data["region"])
+        self.api = api or LeproApi(hass, entry.data["region"])
         self.devices: dict[str, dict[str, Any]] = {}
         self.effect_types: dict[str, str] = {}
         self.states: dict[str, dict[str, Any]] = {}
@@ -252,7 +274,10 @@ class LeproCoordinator:
 
     async def async_start(self) -> None:
         """Authenticate, discover devices, and start MQTT."""
-        await self.api.async_login(self.entry.data["username"], self.entry.data["password"])
+        if not self.api.token or not self.api.secret:
+            await self.api.async_login(
+                self.entry.data["username"], self.entry.data["password"]
+            )
         profile, devices = await asyncio.gather(
             self.api.async_profile(),
             self.api.async_devices(),

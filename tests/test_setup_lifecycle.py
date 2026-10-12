@@ -51,7 +51,8 @@ def _load_integration_module() -> Any:
         pass
 
     class LeproCoordinator:
-        def __init__(self, _hass: Any, _entry: Any) -> None:
+        def __init__(self, _hass: Any, _entry: Any, api: Any = None) -> None:
+            self.api = api
             self.started = False
             self.stopped = False
 
@@ -65,6 +66,7 @@ def _load_integration_module() -> Any:
     client.LeproAuthError = LeproAuthError
     client.LeproCoordinator = LeproCoordinator
     client.LeproMqttError = LeproMqttError
+    client.take_authenticated_api = lambda _hass, _account_id: None
 
     integration_const = types.ModuleType("custom_components.lepro_cloud.const")
     integration_const.PLATFORMS = []
@@ -106,6 +108,7 @@ class FakeConfigEntries:
 class FakeHass:
     def __init__(self) -> None:
         self.bus = FakeBus()
+        self.data: dict[str, Any] = {}
         self.config_entries = FakeConfigEntries()
 
 
@@ -113,6 +116,7 @@ class FakeEntry:
     def __init__(self) -> None:
         self.data = {"region": "north_america"}
         self.runtime_data: Any = None
+        self.unique_id = "north_america:user.com"
         self.unload_callbacks: list[Any] = []
 
     def async_on_unload(self, callback: Any) -> None:

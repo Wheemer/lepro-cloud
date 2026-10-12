@@ -215,7 +215,9 @@ def test_mqtt_setup_failure_cleans_up_certificates_and_is_retryable(
 
     monkeypatch.setattr(client_module.tempfile, "TemporaryDirectory", TempDirectory)
     monkeypatch.setattr(client_module.mqtt, "Client", FailingMqttClient)
-    coordinator = client_module.LeproCoordinator.__new__(client_module.LeproCoordinator)
+    coordinator = client_module.LeproCoordinator.__new__(
+        client_module.LeproCoordinator
+    )
     coordinator.api = types.SimpleNamespace(uid="test")
     coordinator.tmp = None
     coordinator.client = None
@@ -339,3 +341,59 @@ def test_account_region_lookup_uses_the_app_bootstrap_endpoint(
         "account": "user@example.invalid",
         "timestamp": "1720000000",
     }
+
+
+def test_coordinator_reuses_authenticated_api_without_second_login() -> None:
+    client_module = _load_client_module()
+
+    class Api:
+        token = "token"
+        secret = "secret"
+        uid = "uid"
+        login_calls = 0
+
+        async def async_login(self, _username: str, _password: str) -> None:
+            self.login_calls += 1
+
+        async def async_profile(self) -> dict[str, Any]:
+            return {
+                "mqtt": {
+                    "host": "mqtt.example.invalid",
+                    "port": 8883,
+                    "root": "root",
+                    "cert": "cert",
+                }
+            }
+
+        async def async_devices(self) -> list[dict[str, Any]]:
+            return []
+
+        async def async_product_configs(self) -> list[dict[str, Any]]:
+            return []
+
+    class Hass:
+        async def async_add_executor_job(self, target: Any, *args: Any) -> Any:
+            return target(*args)
+
+    coordinator = client_module.LeproCoordinator.__new__(client_module.LeproCoordinator)
+    coordinator.hass = Hass()
+    coordinator.entry = types.SimpleNamespace(
+        data={"username": "user@example.invalid", "password": "password"}
+    )
+    coordinator.api = Api()
+    coordinator.devices = {}
+    coordinator.effect_types = {}
+    coordinator._load_device_scenes = lambda: _empty_async()
+    coordinator._resolve_certs = _dummy_certs
+    coordinator._connect = lambda _info, _certs: None
+
+    assert asyncio.run(coordinator.async_start()) is None
+    assert coordinator.api.login_calls == 0
+
+
+async def _empty_async() -> None:
+    return None
+
+
+async def _dummy_certs(_info: Any, _key: str, _password: str) -> dict[str, str]:
+    return {}

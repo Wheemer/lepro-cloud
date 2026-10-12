@@ -229,7 +229,7 @@ def test_initial_setup_resolves_account_region_before_login(monkeypatch: Any) ->
     module = _load_config_flow_module()
     config_entries = _ConfigEntries([], reconfigure_entry=None)
     flow = module.LeproCloudFlow()
-    flow.hass = types.SimpleNamespace(config_entries=config_entries)
+    flow.hass = types.SimpleNamespace(config_entries=config_entries, data={})
 
     async def account_region(hass: Any, username: str) -> str:
         assert hass is flow.hass
@@ -296,7 +296,7 @@ def test_reconfigure_resolves_account_region_and_reloads_existing_entry(
     )
     config_entries = _ConfigEntries([entry], reconfigure_entry=entry)
     flow = module.LeproCloudFlow()
-    flow.hass = types.SimpleNamespace(config_entries=config_entries)
+    flow.hass = types.SimpleNamespace(config_entries=config_entries, data={})
 
     async def account_region(hass: Any, username: str) -> str:
         assert hass is flow.hass

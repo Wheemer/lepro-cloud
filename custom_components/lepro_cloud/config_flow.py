@@ -11,6 +11,7 @@ from homeassistant.config_entries import ConfigFlow
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 
 from .client import (
+    cache_authenticated_api,
     LeproApi,
     LeproApiError,
     LeproAuthError,
@@ -81,13 +82,17 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
 
             try:
                 region = await _async_account_region(self.hass, username)
-                await LeproApi(self.hass, region).async_login(username, password)
+                api = LeproApi(self.hass, region)
+                await api.async_login(username, password)
             except LeproApiError as err:
                 _log_api_error(err)
                 errors["base"] = _flow_error(err)
             else:
                 await self.async_set_unique_id(_account_unique_id(region, username))
                 self._abort_if_unique_id_configured()
+                cache_authenticated_api(
+                    self.hass, _account_unique_id(region, username), api
+                )
                 return self.async_create_entry(
                     title=f"Lepro Cloud ({username})",
                     data={
@@ -115,7 +120,8 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
             password = user_input[CONF_PASSWORD].strip()
             try:
                 region = await _async_account_region(self.hass, username)
-                await LeproApi(self.hass, region).async_login(username, password)
+                api = LeproApi(self.hass, region)
+                await api.async_login(username, password)
             except LeproApiError as err:
                 _log_api_error(err)
                 errors["base"] = _flow_error(err)
@@ -128,6 +134,7 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
                 ):
                     errors["base"] = "already_configured"
                 else:
+                    cache_authenticated_api(self.hass, unique_id, api)
                     return self.async_update_reload_and_abort(
                         entry,
                         unique_id=unique_id,

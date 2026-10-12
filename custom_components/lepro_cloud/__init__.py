@@ -5,13 +5,21 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
-from .client import LeproApiError, LeproAuthError, LeproCoordinator, LeproMqttError
+from .client import (
+    LeproApiError,
+    LeproAuthError,
+    LeproCoordinator,
+    LeproMqttError,
+    take_authenticated_api,
+)
 from .const import PLATFORMS
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Lepro Cloud from a config entry."""
-    coordinator = LeproCoordinator(hass, entry)
+    coordinator = LeproCoordinator(
+        hass, entry, api=take_authenticated_api(hass, entry.unique_id)
+    )
     try:
         await coordinator.async_start()
     except LeproAuthError as err:
