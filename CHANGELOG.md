@@ -2,6 +2,13 @@
 
 All notable changes to Lepro Cloud are documented here.
 
+## v0.1.3
+
+### Fixed
+
+- Device names now omit Lepro's opaque four-character suffix in Home Assistant.
+- Initial setup reuses the successful sign-in session instead of immediately logging in again.
+
 ## v0.1.1
 
 ### Changed
