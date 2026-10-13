@@ -30,8 +30,13 @@ jobs:
       - name: Build integration ZIP
         run: |
           mkdir -p dist
-          git archive --format=zip --output=dist/lepro_cloud.zip HEAD custom_components/lepro_cloud
-          unzip -Z1 dist/lepro_cloud.zip | grep -Fx "custom_components/lepro_cloud/_private/mqtt_client_key.pem"
+          (
+            cd custom_components/lepro_cloud
+            git archive --format=zip --output=../../dist/lepro_cloud.zip HEAD .
+          )
+          unzip -Z1 dist/lepro_cloud.zip | grep -Fx "manifest.json"
+          unzip -Z1 dist/lepro_cloud.zip | grep -Fx "brand/icon.png"
+          unzip -Z1 dist/lepro_cloud.zip | grep -Fx "_private/mqtt_client_key.pem"
 
       - name: Publish GitHub release
         env:
