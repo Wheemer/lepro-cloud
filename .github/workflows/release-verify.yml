@@ -54,7 +54,8 @@ jobs:
       - name: Stage release artifact
         run: |
           mkdir -p dist
-          (\n            cd custom_components/lepro_cloud\n            git archive --format=zip --output=../../dist/lepro_cloud.zip HEAD .\n          )\n          unzip -Z1 dist/lepro_cloud.zip | grep -Fx \ manifest.json\\n          unzip -Z1 dist/lepro_cloud.zip | grep -Fx \brand/icon.png\\n          unzip -Z1 dist/lepro_cloud.zip | grep -Fx \_private/mqtt_client_key.pem
+          git ls-files custom_components/lepro_cloud | zip -@ dist/lepro_cloud.zip
+          unzip -Z1 dist/lepro_cloud.zip | grep -Fx "custom_components/lepro_cloud/_private/mqtt_client_key.pem"
 
       - name: Upload staged artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
