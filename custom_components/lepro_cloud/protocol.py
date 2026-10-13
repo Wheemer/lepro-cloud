@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import colorsys
-from collections.abc import Mapping
 import re
+from collections.abc import Mapping
 from typing import Any
 from uuid import uuid4
 

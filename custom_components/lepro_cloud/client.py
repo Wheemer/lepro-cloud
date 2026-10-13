@@ -3,19 +3,17 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
-from collections.abc import Callable, Mapping
-from contextlib import suppress
 import json
 import logging
-from pathlib import Path
 import ssl
 import tempfile
 import time
+from collections.abc import Callable, Mapping
+from contextlib import suppress
+from pathlib import Path
 from typing import Any
 
 import paho.mqtt.client as mqtt
-
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -300,7 +298,7 @@ class LeproCoordinator:
         except MqttKeyError as err:
             raise LeproMqttError(str(err)) from err
         certs = await self._resolve_certs(info, key, self.api.secret or "")
-        await self.hass.async_add_executor_job(self._connect, info, certs)
+        await self.hass.async_add_executor_job(self._start_mqtt, info, certs)
 
     async def _load_device_scenes(self) -> None:
         """Load app scenes without making device discovery unavailable."""
@@ -355,8 +353,13 @@ class LeproCoordinator:
             raise LeproMqttError("Lepro MQTT profile did not provide PEM certificate data")
         return value
 
-    def _connect(self, info: Mapping[str, Any], certs: Mapping[str, str]) -> None:
-        """Configure MQTT, cleaning up completely if setup cannot finish."""
+    def _start_mqtt(self, info: Mapping[str, Any], certs: Mapping[str, str]) -> None:
+        """Configure MQTT without blocking Home Assistant startup.
+
+        ``connect_async`` leaves the first connection and later reconnects to
+        Paho's network loop. A temporary broker outage must make entities
+        unavailable, rather than repeatedly restart discovery and login.
+        """
         tmp = tempfile.TemporaryDirectory(prefix="lepro_cloud_")
         client: mqtt.Client | None = None
         loop_started = False
@@ -373,12 +376,8 @@ class LeproCoordinator:
 
             client = mqtt.Client(
                 mqtt.CallbackAPIVersion.VERSION2,
-                client_id=(
-                    "lepro-app-"
-                    + hashlib.sha256(
-                        f"ha-lepro-{self.api.uid or _now_seconds()}".encode()
-                    ).hexdigest()[:32]
-                ),
+                # The Android app uses the login secret in its client ID.
+                client_id=f"lepro-app-{self.api.secret}",
                 clean_session=True,
             )
             client.tls_set(
@@ -390,9 +389,10 @@ class LeproCoordinator:
             )
             client.reconnect_delay_set(min_delay=2, max_delay=300)
             client.on_connect = self._on_connect
+            client.on_connect_fail = self._on_connect_fail
             client.on_disconnect = self._on_disconnect
             client.on_message = self._on_message
-            client.connect(str(info["host"]), int(info["port"]), MQTT_KEEPALIVE)
+            client.connect_async(str(info["host"]), int(info["port"]), MQTT_KEEPALIVE)
             loop_result = client.loop_start()
             if loop_result not in (None, mqtt.MQTT_ERR_SUCCESS):
                 raise LeproMqttError("Lepro MQTT network loop could not start")
@@ -411,6 +411,12 @@ class LeproCoordinator:
 
         self.tmp = tmp
         self.client = client
+
+    def _on_connect_fail(self, _client: mqtt.Client, _userdata: Any) -> None:
+        """Expose an unavailable transport while Paho keeps retrying."""
+        self.connected = False
+        self._schedule_device_updates()
+        _LOGGER.debug("Lepro MQTT connection attempt failed; Paho will reconnect")
 
     def _on_connect(
         self,

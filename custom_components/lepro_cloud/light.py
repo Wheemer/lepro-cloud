@@ -35,9 +35,9 @@ from .protocol import (
     brightness_payload,
     color_payload,
     ha_to_lepro_brightness,
-    lepro_to_ha_brightness,
     lepro_hsv_to_hs,
     lepro_temperature_to_kelvin,
+    lepro_to_ha_brightness,
     on_payload,
     parse_lepro_hsv,
     state_datapoints_for_series,
@@ -148,7 +148,6 @@ class LeproCloudLight(LightEntity):
     @property
     def color_mode(self) -> ColorMode:
         """Return the active HA color mode from Lepro d2 work mode."""
-        state = self.coordinator.states.get(self.device_id, {})
         work_mode = self._work_mode
 
         supported = self.supported_color_modes

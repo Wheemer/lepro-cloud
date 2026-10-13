@@ -6,17 +6,16 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.config_entries import ConfigFlow
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 
 from .client import (
-    cache_authenticated_api,
     LeproApi,
     LeproApiError,
     LeproAuthError,
     LeproError,
     LeproResponseError,
+    cache_authenticated_api,
 )
 from .const import CONF_REGION, DOMAIN
 

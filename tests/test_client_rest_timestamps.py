@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from importlib.util import module_from_spec, spec_from_file_location
-from pathlib import Path
 import sys
 import types
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
 from typing import Any
 
 
@@ -207,8 +207,11 @@ def test_mqtt_setup_failure_cleans_up_certificates_and_is_retryable(
         def reconnect_delay_set(self, **_kwargs: Any) -> None:
             pass
 
-        def connect(self, *_args: Any) -> None:
-            raise OSError("connection refused")
+        def connect_async(self, *_args: Any) -> None:
+            pass
+
+        def loop_start(self) -> int:
+            return 1
 
         def disconnect(self) -> None:
             pass
@@ -218,15 +221,16 @@ def test_mqtt_setup_failure_cleans_up_certificates_and_is_retryable(
     coordinator = client_module.LeproCoordinator.__new__(
         client_module.LeproCoordinator
     )
-    coordinator.api = types.SimpleNamespace(uid="test")
+    coordinator.api = types.SimpleNamespace(secret="test-secret")
     coordinator.tmp = None
     coordinator.client = None
     coordinator._on_connect = lambda *_args: None
+    coordinator._on_connect_fail = lambda *_args: None
     coordinator._on_disconnect = lambda *_args: None
     coordinator._on_message = lambda *_args: None
 
     try:
-        coordinator._connect(
+        coordinator._start_mqtt(
             {"host": "mqtt.example.invalid", "port": 8883},
             {
                 "root": "-----BEGIN CERTIFICATE-----\nroot",
@@ -236,7 +240,7 @@ def test_mqtt_setup_failure_cleans_up_certificates_and_is_retryable(
             },
         )
     except client_module.LeproMqttError as err:
-        assert str(err) == "Unable to connect to Lepro MQTT"
+        assert str(err) == "Lepro MQTT network loop could not start"
     else:
         raise AssertionError("expected LeproMqttError")
 
@@ -385,7 +389,7 @@ def test_coordinator_reuses_authenticated_api_without_second_login() -> None:
     coordinator.effect_types = {}
     coordinator._load_device_scenes = lambda: _empty_async()
     coordinator._resolve_certs = _dummy_certs
-    coordinator._connect = lambda _info, _certs: None
+    coordinator._start_mqtt = lambda _info, _certs: None
 
     assert asyncio.run(coordinator.async_start()) is None
     assert coordinator.api.login_calls == 0

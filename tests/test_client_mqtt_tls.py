@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from importlib.util import module_from_spec, spec_from_file_location
-from pathlib import Path
 import sys
 import types
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
 from typing import Any
 
 
@@ -42,7 +42,7 @@ def _install_client_import_stubs() -> None:
 
 
 class RecordingMqttClient:
-    last_instance: "RecordingMqttClient | None" = None
+    last_instance: RecordingMqttClient | None = None
 
     def __init__(self, *_args: Any, **kwargs: Any) -> None:
         self.tls_kwargs: dict[str, Any] | None = None
@@ -56,7 +56,7 @@ class RecordingMqttClient:
     def reconnect_delay_set(self, **_kwargs: Any) -> None:
         pass
 
-    def connect(self, host: str, port: int, keepalive: int) -> None:
+    def connect_async(self, host: str, port: int, keepalive: int) -> None:
         self.connected_to = (host, port, keepalive)
 
     def loop_start(self) -> None:
@@ -78,16 +78,16 @@ def _load_client_module() -> Any:
     return module
 
 
-def test_connect_passes_login_secret_as_tls_key_password() -> None:
+def test_mqtt_start_uses_app_client_id_and_does_not_block_on_connection() -> None:
     client_module = _load_client_module()
     coordinator = client_module.LeproCoordinator.__new__(client_module.LeproCoordinator)
-    coordinator.api = types.SimpleNamespace(uid="user-id")
+    coordinator.api = types.SimpleNamespace(secret="login-secret")
     coordinator.devices = {}
     coordinator.client = None
     coordinator.connected = False
     coordinator._stopping = False
 
-    coordinator._connect(
+    coordinator._start_mqtt(
         {"host": "mqtt.example.invalid", "port": 8883},
         {
             "root": "root-ca",
@@ -99,8 +99,7 @@ def test_connect_passes_login_secret_as_tls_key_password() -> None:
 
     mqtt_client = RecordingMqttClient.last_instance
     assert mqtt_client is not None
-    assert mqtt_client.client_id.startswith("lepro-app-")
-    assert len(mqtt_client.client_id) == len("lepro-app-") + 32
+    assert mqtt_client.client_id == "lepro-app-login-secret"
     assert mqtt_client.tls_kwargs is not None
     assert mqtt_client.tls_kwargs["keyfile_password"] == "login-secret"
     assert Path(mqtt_client.tls_kwargs["keyfile"]).read_text(encoding="utf-8") == (

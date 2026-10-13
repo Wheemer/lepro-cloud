@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from importlib.util import module_from_spec, spec_from_file_location
 import asyncio
 import logging
-from pathlib import Path
 import sys
 import types
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
 from typing import Any
 
 
@@ -80,7 +80,7 @@ def _load_config_flow_module() -> Any:
         def __hash__(self) -> int:
             return hash((self.key, self.default))
 
-        def __eq__(self, other: Any) -> bool:
+        def __eq__(self, other: object) -> bool:
             return (
                 isinstance(other, RequiredMarker)
                 and other.key == self.key
