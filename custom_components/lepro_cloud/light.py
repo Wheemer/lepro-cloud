@@ -20,7 +20,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .client import LeproCoordinator
 from .const import DOMAIN
-from .device import device_name, is_light
+from .device import device_info, is_light
 from .protocol import (
     DP_BRIGHTNESS,
     DP_COLOR,
@@ -73,18 +73,15 @@ class LeproCloudLight(LightEntity):
         self.device_id = device_id
         self.device = device
         self._attr_unique_id = f"{DOMAIN}_{device_id}"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, device_id)},
-            "name": device_name(device, "Lepro Light"),
-            "manufacturer": "Lepro",
-            "model": device.get("series") or device.get("pid") or "Wi-Fi light",
-        }
+        self._attr_device_info = device_info(device, device_id, "Lepro Light")
 
     async def async_added_to_hass(self) -> None:
         """Register for MQTT state updates."""
         self.async_on_remove(
             self.coordinator.listen(
-                lambda did: self.async_write_ha_state() if did == self.device_id else None
+                lambda did: (
+                    self.async_write_ha_state() if did == self.device_id else None
+                )
             )
         )
 
@@ -130,7 +127,9 @@ class LeproCloudLight(LightEntity):
     def _work_mode(self) -> int:
         """Return the active device work mode without inventing a mode."""
         try:
-            return int(self.coordinator.states.get(self.device_id, {}).get(DP_WORK_MODE))
+            return int(
+                self.coordinator.states.get(self.device_id, {}).get(DP_WORK_MODE)
+            )
         except (TypeError, ValueError):
             return WORK_MODE_WHITE
 
@@ -165,9 +164,7 @@ class LeproCloudLight(LightEntity):
     def supported_features(self) -> LightEntityFeature:
         """Return the features backed by app-provided device data."""
         return (
-            LightEntityFeature.EFFECT
-            if self._scene_effects
-            else LightEntityFeature(0)
+            LightEntityFeature.EFFECT if self._scene_effects else LightEntityFeature(0)
         )
 
     @property
@@ -197,7 +194,9 @@ class LeproCloudLight(LightEntity):
     def _scene_effects(self) -> dict[str, tuple[str, str]]:
         """Map app-provided scene names to their verified MQTT payloads."""
         series = str(self.device.get("series") or self.device.get("pid") or "").upper()
-        effect_type = self.coordinator.effect_types.get(series) or self.device.get("effect")
+        effect_type = self.coordinator.effect_types.get(series) or self.device.get(
+            "effect"
+        )
         effects: dict[str, tuple[str, str]] = {}
         scenes = self.device.get("scenes")
         if not isinstance(scenes, list):
@@ -277,7 +276,9 @@ class LeproCloudLight(LightEntity):
             elif datapoint == DP_COLOR and re.fullmatch(r"[0-9a-fA-F]{12}", value):
                 # The app keeps a saved HSV scene's hue and saturation but
                 # rewrites its final value component to the requested level.
-                values[DP_COLOR] = f"{value[:8]}{ha_to_lepro_brightness(brightness):04X}"
+                values[DP_COLOR] = (
+                    f"{value[:8]}{ha_to_lepro_brightness(brightness):04X}"
+                )
         elif ATTR_HS_COLOR in kwargs:
             values.update(color_payload(kwargs[ATTR_HS_COLOR], brightness))
         elif ATTR_COLOR_TEMP_KELVIN in kwargs:

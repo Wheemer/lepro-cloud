@@ -16,7 +16,9 @@ def _install_client_import_stubs() -> None:
     homeassistant_core = types.ModuleType("homeassistant.core")
     homeassistant_core.HomeAssistant = object
     homeassistant_const = types.ModuleType("homeassistant.const")
-    homeassistant_const.Platform = types.SimpleNamespace(LIGHT="light", SWITCH="switch")
+    homeassistant_const.Platform = types.SimpleNamespace(
+        BINARY_SENSOR="binary_sensor", LIGHT="light", SWITCH="switch"
+    )
     aiohttp_client = types.ModuleType("homeassistant.helpers.aiohttp_client")
     aiohttp_client.async_get_clientsession = lambda hass: None
 

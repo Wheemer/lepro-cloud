@@ -46,3 +46,27 @@ def is_light(device: dict[str, Any]) -> bool:
 def is_plug(device: dict[str, Any]) -> bool:
     """Return true when discovery identifies a Wi-Fi plug."""
     return device_type(device) == DEVICE_TYPE_PLUG
+
+
+def is_supported_device(device: dict[str, Any]) -> bool:
+    """Return true for a non-camera device this integration supports."""
+    return is_light(device) or is_plug(device)
+
+
+def device_info(
+    device: dict[str, Any], device_id: str, fallback_name: str = "Lepro Device"
+) -> dict[str, Any]:
+    """Build Home Assistant device metadata from the app's discovery payload."""
+    info: dict[str, Any] = {
+        "identifiers": {("lepro_cloud", device_id)},
+        "name": device_name(device, fallback_name),
+        "manufacturer": "Lepro",
+        "model": device.get("series") or device.get("pid") or "Wi-Fi device",
+    }
+    if firmware := device.get("fwVersion"):
+        info["sw_version"] = str(firmware)
+    if hardware := device.get("hwVersion"):
+        info["hw_version"] = str(hardware)
+    if mac := device.get("mac"):
+        info["connections"] = {("mac", str(mac))}
+    return info

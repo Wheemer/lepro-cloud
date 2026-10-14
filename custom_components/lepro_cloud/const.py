@@ -3,7 +3,7 @@
 from homeassistant.const import Platform
 
 DOMAIN = "lepro_cloud"
-PLATFORMS = [Platform.LIGHT, Platform.SWITCH]
+PLATFORMS = [Platform.BINARY_SENSOR, Platform.LIGHT, Platform.SWITCH]
 
 CONF_REGION = "region"
 

@@ -26,7 +26,15 @@ def _install_platform_import_stubs() -> None:
         BRIGHTNESS="brightness", COLOR_TEMP="color_temp", HS="hs"
     )
     light_component.LightEntity = RecordingEntity
-    light_component.LightEntityFeature = type("LightEntityFeature", (int,), {"EFFECT": 1})
+    light_component.LightEntityFeature = type(
+        "LightEntityFeature", (int,), {"EFFECT": 1}
+    )
+
+    binary_sensor_component = types.ModuleType("homeassistant.components.binary_sensor")
+    binary_sensor_component.BinarySensorEntity = RecordingEntity
+    binary_sensor_component.BinarySensorDeviceClass = types.SimpleNamespace(
+        CONNECTIVITY="connectivity"
+    )
 
     switch_component = types.ModuleType("homeassistant.components.switch")
     switch_component.SwitchEntity = RecordingEntity
@@ -38,12 +46,17 @@ def _install_platform_import_stubs() -> None:
     homeassistant_core.HomeAssistant = object
 
     entity = types.ModuleType("homeassistant.helpers.entity")
-    entity.EntityCategory = types.SimpleNamespace(CONFIG="config")
+    entity.EntityCategory = types.SimpleNamespace(
+        CONFIG="config", DIAGNOSTIC="diagnostic"
+    )
     entity_platform = types.ModuleType("homeassistant.helpers.entity_platform")
     entity_platform.AddEntitiesCallback = Callable[..., None]
 
     homeassistant_const = types.ModuleType("homeassistant.const")
-    homeassistant_const.Platform = types.SimpleNamespace(LIGHT="light", SWITCH="switch")
+    homeassistant_const.Platform = types.SimpleNamespace(
+        BINARY_SENSOR="binary_sensor", LIGHT="light", SWITCH="switch"
+    )
+    homeassistant_const.EntityCategory = entity.EntityCategory
 
     paho = types.ModuleType("paho")
     paho_mqtt = types.ModuleType("paho.mqtt")
@@ -62,10 +75,13 @@ def _install_platform_import_stubs() -> None:
         "homeassistant.components", types.ModuleType("homeassistant.components")
     )
     sys.modules["homeassistant.components.light"] = light_component
+    sys.modules["homeassistant.components.binary_sensor"] = binary_sensor_component
     sys.modules["homeassistant.components.switch"] = switch_component
     sys.modules["homeassistant.config_entries"] = config_entries
     sys.modules["homeassistant.core"] = homeassistant_core
-    sys.modules.setdefault("homeassistant.helpers", types.ModuleType("homeassistant.helpers"))
+    sys.modules.setdefault(
+        "homeassistant.helpers", types.ModuleType("homeassistant.helpers")
+    )
     sys.modules["homeassistant.helpers.entity"] = entity
     sys.modules["homeassistant.helpers.entity_platform"] = entity_platform
     sys.modules["homeassistant.const"] = homeassistant_const
@@ -110,7 +126,9 @@ class RecordingEntity:
 
 
 class FakeHass:
-    async def async_add_executor_job(self, target: Callable[..., Any], *args: Any) -> Any:
+    async def async_add_executor_job(
+        self, target: Callable[..., Any], *args: Any
+    ) -> Any:
         return target(*args)
 
 
@@ -166,15 +184,47 @@ def test_device_name_hides_lepro_appended_identifier() -> None:
     assert device.device_name({"name": "Kitchen_TV"}) == "Kitchen_TV"
 
 
+def test_device_info_exposes_app_discovery_metadata() -> None:
+    device = _load_module("device")
+
+    info = device.device_info(
+        {
+            "name": "Porch_DEAD",
+            "series": "SE1",
+            "fwVersion": "2.2.13",
+            "hwVersion": "1.0",
+            "mac": "AA:BB:CC:DD:EE:FF",
+        },
+        "device-id",
+    )
+
+    assert info == {
+        "identifiers": {("lepro_cloud", "device-id")},
+        "name": "Porch",
+        "manufacturer": "Lepro",
+        "model": "SE1",
+        "sw_version": "2.2.13",
+        "hw_version": "1.0",
+        "connections": {("mac", "AA:BB:CC:DD:EE:FF")},
+    }
+
+
 def test_setup_entry_adds_lights_and_switches() -> None:
+    binary_sensor = _load_module("binary_sensor")
     light = _load_module("light")
     switch = _load_module("switch")
     coordinator = FakeCoordinator()
     entry = types.SimpleNamespace(runtime_data=coordinator)
 
     added_lights: list[Any] = []
+    added_binary_sensors: list[Any] = []
     added_switches: list[Any] = []
 
+    asyncio.run(
+        binary_sensor.async_setup_entry(
+            FakeHass(), entry, lambda entities: added_binary_sensors.extend(entities)
+        )
+    )
     asyncio.run(
         light.async_setup_entry(
             FakeHass(), entry, lambda entities: added_lights.extend(entities)
@@ -187,7 +237,31 @@ def test_setup_entry_adds_lights_and_switches() -> None:
     )
 
     assert [entity.device_id for entity in added_lights] == ["light-1"]
+    assert [entity.device_id for entity in added_binary_sensors] == [
+        "light-1",
+        "plug-1",
+    ]
     assert [entity.device_id for entity in added_switches] == ["plug-1"]
+
+
+def test_cloud_connection_sensor_uses_the_verified_online_datapoint() -> None:
+    binary_sensor = _load_module("binary_sensor")
+    coordinator = FakeCoordinator()
+    entity = binary_sensor.LeproCloudConnectionSensor(
+        coordinator, "light-1", coordinator.devices["light-1"]
+    )
+
+    assert entity.available is True
+    assert entity.is_on is None
+
+    coordinator.states["light-1"] = {"online": 1}
+    assert entity.is_on is True
+
+    coordinator.states["light-1"]["online"] = 0
+    assert entity.is_on is False
+
+    coordinator.connected = False
+    assert entity.available is False
 
 
 def test_plug_switch_uses_d1_state_command_and_availability() -> None:
@@ -226,10 +300,16 @@ def test_p1_plug_exposes_and_controls_its_button_lock() -> None:
     entities: list[Any] = []
 
     asyncio.run(
-        switch.async_setup_entry(FakeHass(), entry, lambda added: entities.extend(added))
+        switch.async_setup_entry(
+            FakeHass(), entry, lambda added: entities.extend(added)
+        )
     )
 
-    lock = next(entity for entity in entities if entity.device_id == "p1-1" and entity._attr_name == "Button Lock")
+    lock = next(
+        entity
+        for entity in entities
+        if entity.device_id == "p1-1" and entity._attr_name == "Button Lock"
+    )
     lock.hass = FakeHass()
     assert lock._attr_entity_category == "config"
     assert lock.is_on is None
@@ -282,9 +362,16 @@ def test_stv1_exposes_verified_status_and_auto_toggle_switches() -> None:
     coordinator.states["stv-1"] = {"online": 1, "d157": 1, "d172": 0}
     entry = types.SimpleNamespace(runtime_data=coordinator)
     entities: list[Any] = []
-    asyncio.run(switch.async_setup_entry(FakeHass(), entry, lambda added: entities.extend(added)))
+    asyncio.run(
+        switch.async_setup_entry(
+            FakeHass(), entry, lambda added: entities.extend(added)
+        )
+    )
     settings = [entity for entity in entities if entity.device_id == "stv-1"]
-    assert [entity._attr_name for entity in settings] == ["Status LED", "Auto-Toggle Lights"]
+    assert [entity._attr_name for entity in settings] == [
+        "Status LED",
+        "Auto-Toggle Lights",
+    ]
     assert all(entity._attr_entity_category == "config" for entity in settings)
     assert settings[0].is_on is True
     assert settings[1].is_on is False
@@ -332,7 +419,10 @@ def test_light_turn_on_honors_brightness_color_temp_and_hs_color() -> None:
     entity.hass = FakeHass()
 
     asyncio.run(entity.async_turn_on(brightness=128))
-    assert coordinator.commands[-1] == ("light-1", {"d1": 1, "d2": 0, "d3": 502, "d4": 500})
+    assert coordinator.commands[-1] == (
+        "light-1",
+        {"d1": 1, "d2": 0, "d3": 502, "d4": 500},
+    )
 
     asyncio.run(entity.async_turn_on(color_temp_kelvin=2700))
     assert coordinator.commands[-1] == (

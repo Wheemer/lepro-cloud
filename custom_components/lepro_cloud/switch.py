@@ -12,7 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .client import LeproCoordinator
 from .const import DOMAIN
-from .device import device_name, is_plug
+from .device import device_info, is_plug
 from .protocol import DP_ONLINE, on_payload, state_is_on
 
 
@@ -69,20 +69,15 @@ class LeproCloudPlugSwitch(SwitchEntity):
         self.device_id = device_id
         self.device = device
         self._attr_unique_id = f"{DOMAIN}_{device_id}_switch"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, device_id)},
-            "name": device_name(device, "Lepro Plug"),
-            "manufacturer": "Lepro",
-            "model": device.get("series") or device.get("pid") or "Wi-Fi plug",
-        }
+        self._attr_device_info = device_info(device, device_id, "Lepro Plug")
 
     async def async_added_to_hass(self) -> None:
         """Register for MQTT state updates."""
         self.async_on_remove(
             self.coordinator.listen(
-                lambda did: self.async_write_ha_state()
-                if did == self.device_id
-                else None
+                lambda did: (
+                    self.async_write_ha_state() if did == self.device_id else None
+                )
             )
         )
 
@@ -250,20 +245,15 @@ class LeproCloudStvSettingSwitch(SwitchEntity):
         self._datapoint = datapoint
         self._attr_name = name
         self._attr_unique_id = f"{DOMAIN}_{device_id}_{key}"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, device_id)},
-            "name": device_name(device, "Lepro TV Light Strip"),
-            "manufacturer": "Lepro",
-            "model": device.get("series") or device.get("pid") or "TV light strip",
-        }
+        self._attr_device_info = device_info(device, device_id, "Lepro TV Light Strip")
 
     async def async_added_to_hass(self) -> None:
         """Register for MQTT state updates."""
         self.async_on_remove(
             self.coordinator.listen(
-                lambda did: self.async_write_ha_state()
-                if did == self.device_id
-                else None
+                lambda did: (
+                    self.async_write_ha_state() if did == self.device_id else None
+                )
             )
         )
 
