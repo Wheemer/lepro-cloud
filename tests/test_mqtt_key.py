@@ -37,5 +37,5 @@ def test_load_mqtt_private_key_rejects_non_pem_file(
     key_file.write_text("not a key", encoding="utf-8")
     monkeypatch.setenv(mqtt_key.ENV_MQTT_KEY_FILE, str(key_file))
 
-    with pytest.raises(mqtt_key.MqttKeyError, match="not PEM-formatted"):
+    with pytest.raises(mqtt_key.MqttKeyError, match="bundled MQTT credential is invalid"):
         mqtt_key.load_mqtt_private_key()
