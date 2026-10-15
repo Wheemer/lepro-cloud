@@ -35,7 +35,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, async_stop_on_hass_shutdown)
     )
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    try:
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    except Exception:
+        # MQTT has already started at this point. Do not leave the transport
+        # running if a platform cannot be created and Home Assistant retries.
+        await coordinator.async_stop()
+        raise
     return True
 
 

@@ -134,3 +134,25 @@ def test_core_stop_cleans_up_the_mqtt_coordinator() -> None:
 
     asyncio.run(hass.bus.listener(None))
     assert entry.runtime_data.stopped is True
+
+
+def test_platform_setup_failure_stops_the_mqtt_coordinator() -> None:
+    module = _load_integration_module()
+    hass = FakeHass()
+    entry = FakeEntry()
+
+    class FailingConfigEntries(FakeConfigEntries):
+        async def async_forward_entry_setups(
+            self, _entry: Any, _platforms: list[Any]
+        ) -> None:
+            raise RuntimeError("platform setup failed")
+
+    hass.config_entries = FailingConfigEntries()
+    try:
+        asyncio.run(module.async_setup_entry(hass, entry))
+    except RuntimeError as err:
+        assert str(err) == "platform setup failed"
+    else:
+        raise AssertionError("expected platform setup failure")
+    assert entry.runtime_data.started is True
+    assert entry.runtime_data.stopped is True
