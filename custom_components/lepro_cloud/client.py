@@ -437,12 +437,12 @@ class LeproCoordinator:
         self._schedule_device_updates()
         for did, device in self.devices.items():
             for topic in subscription_topics(did):
-                client.subscribe(topic, qos=1)
+                client.subscribe(topic, qos=0)
             series = device.get("series") or device.get("pid")
             client.publish(
                 topic_get(did),
                 json.dumps(make_get_payload(state_datapoints_for_series(series))),
-                qos=1,
+                qos=0,
             )
 
     def _on_disconnect(
@@ -496,7 +496,7 @@ class LeproCoordinator:
         if not self.client:
             raise LeproMqttError("Lepro MQTT client is not started")
         message = json.dumps(make_set_payload(values), separators=(",", ":"))
-        result = self.client.publish(topic_set(did), message, qos=1)
+        result = self.client.publish(topic_set(did), message, qos=0)
         if result.rc != mqtt.MQTT_ERR_SUCCESS:
             raise LeproMqttError(f"Lepro MQTT publish failed with code {result.rc}")
 

@@ -38,6 +38,8 @@ state_datapoints_for_series = protocol.state_datapoints_for_series
 subscription_topics = protocol.subscription_topics
 topic_get = protocol.topic_get
 topic_set = protocol.topic_set
+make_get_payload = protocol.make_get_payload
+make_set_payload = protocol.make_set_payload
 
 
 def test_topics() -> None:
@@ -47,7 +49,17 @@ def test_topics() -> None:
         "le/123/prp/rpt",
         "le/123/prp/getr",
         "le/123/prp/setr",
+        "le/123/prp/dsr/app/getr",
     )
+
+
+def test_wire_payloads_use_the_app_numeric_message_id() -> None:
+    for payload in (
+        make_get_payload(("online", "d1")),
+        make_set_payload({"d1": 1}),
+    ):
+        assert isinstance(payload["id"], int)
+        assert 0 <= payload["id"] < 1_000_000_000
 
 
 def test_state_queries_match_the_apk_product_families() -> None:

@@ -5,8 +5,8 @@ from __future__ import annotations
 import colorsys
 import re
 from collections.abc import Mapping
+from random import randrange
 from typing import Any
-from uuid import uuid4
 
 DP_ON = "d1"
 DP_WORK_MODE = "d2"
@@ -28,7 +28,7 @@ MAX_HA_KELVIN = 6500
 MAX_COLOR_VALUE = 1000
 HSV_HEX_RE = re.compile(r"^[0-9a-f]{12}$", re.IGNORECASE)
 
-SUBSCRIBE_SUFFIXES = ("rpt", "getr", "setr")
+SUBSCRIBE_SUFFIXES = ("rpt", "getr", "setr", "dsr/app/getr")
 MQTT_TOPIC_PREFIX = "le"
 
 # Product-series state lists observed in MqttConnectionPool in the Android app.
@@ -115,13 +115,13 @@ def is_complete_standard_state(state: Mapping[str, Any]) -> bool:
 
 def make_get_payload(datapoints: tuple[str, ...] = BULB_STATE_DATAPOINTS) -> dict[str, Any]:
     """Build the product-specific state request used by the Android app."""
-    return {"id": uuid4().hex, "d": list(datapoints)}
+    return {"id": randrange(1_000_000_000), "d": list(datapoints)}
 
 
 
 def make_set_payload(values: Mapping[str, Any]) -> dict[str, Any]:
     """Build a state set payload."""
-    return {"id": uuid4().hex, "d": dict(values)}
+    return {"id": randrange(1_000_000_000), "d": dict(values)}
 
 
 def on_payload(is_on: bool) -> dict[str, int]:
