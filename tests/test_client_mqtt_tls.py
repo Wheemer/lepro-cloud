@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import types
 from importlib.util import module_from_spec, spec_from_file_location
@@ -49,6 +50,8 @@ class RecordingMqttClient:
     def __init__(self, *_args: Any, **kwargs: Any) -> None:
         self.tls_kwargs: dict[str, Any] | None = None
         self.client_id = kwargs.get("client_id")
+        self.subscriptions: list[tuple[str, int]] = []
+        self.publishes: list[tuple[str, str, int]] = []
         self.connected_to: tuple[str, int, int] | None = None
         RecordingMqttClient.last_instance = self
 
@@ -60,6 +63,12 @@ class RecordingMqttClient:
 
     def connect_async(self, host: str, port: int, keepalive: int) -> None:
         self.connected_to = (host, port, keepalive)
+
+    def subscribe(self, topic: str, qos: int) -> None:
+        self.subscriptions.append((topic, qos))
+
+    def publish(self, topic: str, payload: str, qos: int) -> None:
+        self.publishes.append((topic, payload, qos))
 
     def loop_start(self) -> None:
         pass
@@ -108,6 +117,32 @@ def test_mqtt_start_uses_app_client_id_and_does_not_block_on_connection() -> Non
         "private-key-placeholder"
     )
     coordinator.tmp.cleanup()
+
+def test_mqtt_connect_uses_the_app_qos_zero_startup_request() -> None:
+    client_module = _load_client_module()
+    mqtt_client = RecordingMqttClient()
+    coordinator = client_module.LeproCoordinator.__new__(client_module.LeproCoordinator)
+    coordinator.devices = {"light-1": {"did": "light-1", "series": "S1-10"}}
+    coordinator.connected = False
+    coordinator._schedule_device_updates = lambda: None
+
+    coordinator._on_connect(mqtt_client, None, None, 0, None)
+
+    assert coordinator.connected is True
+    assert mqtt_client.subscriptions == [
+        ("le/light-1/prp/rpt", 0),
+        ("le/light-1/prp/getr", 0),
+        ("le/light-1/prp/setr", 0),
+        ("le/light-1/prp/dsr/app/getr", 0),
+    ]
+    assert len(mqtt_client.publishes) == 1
+    topic, payload, qos = mqtt_client.publishes[0]
+    assert topic == "le/light-1/prp/get"
+    assert qos == 0
+    request = json.loads(payload)
+    assert isinstance(request["id"], int)
+    assert request["d"] == ["online", "d1", "d2", "d3", "d4", "d5", "d50", "d52"]
+
 
 def test_full_status_reply_marks_device_online_when_online_is_omitted() -> None:
     class InlineLoop:
