@@ -88,6 +88,8 @@ class LeproCloudLight(LightEntity):
     @property
     def available(self) -> bool:
         """Return if the light is available."""
+        if not self.coordinator.connected:
+            return False
         state = self.coordinator.states.get(self.device_id, {})
         if DP_ONLINE in state:
             try:

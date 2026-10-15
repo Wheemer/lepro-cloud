@@ -84,6 +84,8 @@ class LeproCloudPlugSwitch(SwitchEntity):
     @property
     def available(self) -> bool:
         """Return if the plug is available."""
+        if not self.coordinator.connected:
+            return False
         state = self.coordinator.states.get(self.device_id, {})
         if DP_ONLINE in state:
             try:
@@ -260,6 +262,8 @@ class LeproCloudStvSettingSwitch(SwitchEntity):
     @property
     def available(self) -> bool:
         """Return whether the TV strip is available."""
+        if not self.coordinator.connected:
+            return False
         state = self.coordinator.states.get(self.device_id, {})
         if DP_ONLINE in state:
             try:

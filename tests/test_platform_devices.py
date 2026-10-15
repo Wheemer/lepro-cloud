@@ -210,6 +210,10 @@ def test_plug_switch_uses_d1_state_command_and_availability() -> None:
 
     coordinator.states["plug-1"]["online"] = 0
     assert entity.available is False
+    coordinator.states["plug-1"]["online"] = 1
+    coordinator.connected = False
+    assert entity.available is False
+
 
     asyncio.run(entity.async_turn_off())
 
