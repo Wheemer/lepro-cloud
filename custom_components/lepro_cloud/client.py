@@ -27,6 +27,8 @@ from .const import (
 )
 from .mqtt_key import MqttKeyError, load_mqtt_private_key
 from .protocol import (
+    DP_ONLINE,
+    is_complete_standard_state,
     make_get_payload,
     make_set_payload,
     state_datapoints_for_series,
@@ -468,6 +470,11 @@ class LeproCoordinator:
             _LOGGER.debug("Ignoring malformed Lepro MQTT message on %s", message.topic)
             return
         if isinstance(state, dict):
+            # Lepro Home's MQTT handler marks a device online when it receives
+            # the complete d1-d5 status reply, even if this broker response
+            # omits the separately requested online datapoint.
+            if DP_ONLINE not in state and is_complete_standard_state(state):
+                state = {**state, DP_ONLINE: 1}
             self.states.setdefault(did, {}).update(state)
             self.hass.loop.call_soon_threadsafe(self._notify, did)
 

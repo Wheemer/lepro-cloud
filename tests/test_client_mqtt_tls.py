@@ -15,7 +15,9 @@ def _install_client_import_stubs() -> None:
     homeassistant_core = types.ModuleType("homeassistant.core")
     homeassistant_core.HomeAssistant = object
     homeassistant_const = types.ModuleType("homeassistant.const")
-    homeassistant_const.Platform = types.SimpleNamespace(LIGHT="light", SWITCH="switch")
+    homeassistant_const.Platform = types.SimpleNamespace(
+        BINARY_SENSOR="binary_sensor", LIGHT="light", SWITCH="switch"
+    )
     aiohttp_client = types.ModuleType("homeassistant.helpers.aiohttp_client")
     aiohttp_client.async_get_clientsession = lambda hass: None
 
@@ -106,3 +108,23 @@ def test_mqtt_start_uses_app_client_id_and_does_not_block_on_connection() -> Non
         "private-key-placeholder"
     )
     coordinator.tmp.cleanup()
+
+def test_full_status_reply_marks_device_online_when_online_is_omitted() -> None:
+    class InlineLoop:
+        def call_soon_threadsafe(self, callback: Any, *args: Any) -> None:
+            callback(*args)
+
+    client_module = _load_client_module()
+    coordinator = client_module.LeproCoordinator.__new__(client_module.LeproCoordinator)
+    coordinator.states = {}
+    coordinator.hass = types.SimpleNamespace(loop=InlineLoop())
+    notified: list[str] = []
+    coordinator._notify = notified.append
+    message = types.SimpleNamespace(
+        topic="le/light-1/prp/getr",
+        payload=b'{"d":{"d1":1,"d2":0,"d3":500,"d4":0,"d5":"00b403e803e8"}}',
+    )
+
+    coordinator._on_message(None, None, message)
+
+    assert coordinator.states["light-1"]["online"] == 1

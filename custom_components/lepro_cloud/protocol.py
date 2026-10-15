@@ -100,6 +100,19 @@ def state_datapoints_for_series(series: Any) -> tuple[str, ...]:
     return BULB_STATE_DATAPOINTS
 
 
+def is_complete_standard_state(state: Mapping[str, Any]) -> bool:
+    """Return whether a reply is the app's complete standard light status.
+
+    The official app treats this five-datapoint reply as proof that the device
+    is online even when the broker omits the separately requested online
+    value. This is deliberately narrower than treating every report as proof
+    of connectivity.
+    """
+    return {DP_ON, DP_WORK_MODE, DP_BRIGHTNESS, DP_TEMPERATURE, DP_COLOR}.issubset(
+        state
+    )
+
+
 def make_get_payload(datapoints: tuple[str, ...] = BULB_STATE_DATAPOINTS) -> dict[str, Any]:
     """Build the product-specific state request used by the Android app."""
     return {"id": uuid4().hex, "d": list(datapoints)}

@@ -74,6 +74,14 @@ def test_state_queries_match_the_apk_product_families() -> None:
     )
 
 
+
+def test_complete_standard_state_means_online_when_online_is_omitted() -> None:
+    assert protocol.is_complete_standard_state(
+        {"d1": 1, "d2": 0, "d3": 500, "d4": 0, "d5": "00b403e803e8"}
+    )
+    assert not protocol.is_complete_standard_state({"d1": 1, "d2": 0, "d3": 500})
+
+
 def test_on_payload() -> None:
     assert on_payload(True) == {DP_ON: 1}
     assert on_payload(False) == {DP_ON: 0}

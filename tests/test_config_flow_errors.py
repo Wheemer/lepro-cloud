@@ -17,7 +17,9 @@ def _load_config_flow_module() -> Any:
     homeassistant_const = types.ModuleType("homeassistant.const")
     homeassistant_const.CONF_PASSWORD = "password"
     homeassistant_const.CONF_USERNAME = "username"
-    homeassistant_const.Platform = types.SimpleNamespace(LIGHT="light", SWITCH="switch")
+    homeassistant_const.Platform = types.SimpleNamespace(
+        BINARY_SENSOR="binary_sensor", LIGHT="light", SWITCH="switch"
+    )
 
     class ConfigFlow:
         def __init_subclass__(cls, **_kwargs: Any) -> None:
