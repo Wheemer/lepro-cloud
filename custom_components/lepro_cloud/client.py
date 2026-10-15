@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import ssl
@@ -65,6 +66,12 @@ class LeproMqttError(LeproError):
 
 def _now_seconds() -> int:
     return int(time.time())
+
+
+def _persistent_mac(account: str) -> str:
+    """Return a stable, locally-administered device address for an account."""
+    digest = hashlib.sha256(account.strip().lower().encode()).hexdigest()
+    return f"02:{digest[0:2]}:{digest[2:4]}:{digest[4:6]}:{digest[6:8]}:{digest[8:10]}"
 
 
 class LeproApi:
@@ -139,7 +146,9 @@ class LeproApi:
             raise LeproResponseError(str(payload.get("msg") or "Lepro Cloud API error"))
 
         data_value = payload.get("data")
-        return data_value if isinstance(data_value, dict) else {"list": data_value or []}
+        return (
+            data_value if isinstance(data_value, dict) else {"list": data_value or []}
+        )
 
     async def async_login(self, username: str, password: str) -> None:
         """Authenticate with Lepro Cloud."""
@@ -150,7 +159,7 @@ class LeproApi:
                 "platform": "2",
                 "account": username,
                 "password": password,
-                "mac": "00:00:00:00:00:00",
+                "mac": _persistent_mac(username),
                 "timestamp": str(_now_seconds()),
                 "language": DEFAULT_LANGUAGE,
                 "fcmToken": "",
@@ -168,7 +177,9 @@ class LeproApi:
 
     async def async_devices(self) -> list[dict[str, Any]]:
         """Discover supported Wi-Fi lights and plugs across account families."""
-        families = await self._request("GET", f"/family/list/timestamp/{_now_seconds()}")
+        families = await self._request(
+            "GET", f"/family/list/timestamp/{_now_seconds()}"
+        )
         devices: dict[str, dict[str, Any]] = {}
         for family in _as_list(families):
             fid = family.get("fid")
@@ -215,7 +226,9 @@ class LeproApi:
                 response = await self._session.get(url, headers=self._headers())
                 payload = await response.json(content_type=None)
         except (OSError, TimeoutError, ValueError) as err:
-            raise LeproApiError("Unable to download Lepro product configuration") from err
+            raise LeproApiError(
+                "Unable to download Lepro product configuration"
+            ) from err
         if response.status >= 400:
             raise LeproApiError("Unable to download Lepro product configuration")
         if not isinstance(payload, list):
@@ -231,13 +244,17 @@ class LeproApi:
                     raise LeproApiError("Lepro certificate download failed")
                 return await response.text()
         except (OSError, TimeoutError, ValueError) as err:
-            raise LeproApiError(f"Unable to download Lepro certificate from {url}") from err
+            raise LeproApiError(
+                f"Unable to download Lepro certificate from {url}"
+            ) from err
 
 
 _PENDING_APIS = f"{DOMAIN}_pending_apis"
 
 
-def cache_authenticated_api(hass: HomeAssistant, account_id: str, api: LeproApi) -> None:
+def cache_authenticated_api(
+    hass: HomeAssistant, account_id: str, api: LeproApi
+) -> None:
     """Keep a just-authenticated API session for the first entry setup."""
     hass.data.setdefault(_PENDING_APIS, {})[account_id] = api
 
@@ -282,7 +299,9 @@ class LeproCoordinator:
             self.api.async_profile(),
             self.api.async_devices(),
         )
-        self.devices = {str(device["did"]): device for device in devices if device.get("did")}
+        self.devices = {
+            str(device["did"]): device for device in devices if device.get("did")
+        }
         try:
             configs = await self.api.async_product_configs()
         except LeproApiError as err:
@@ -352,7 +371,9 @@ class LeproCoordinator:
         if value.startswith(("http://", "https://")):
             value = await self.api.async_text(value)
         if "-----BEGIN" not in value:
-            raise LeproMqttError("Lepro MQTT profile did not provide PEM certificate data")
+            raise LeproMqttError(
+                "Lepro MQTT profile did not provide PEM certificate data"
+            )
         return value
 
     def _start_mqtt(self, info: Mapping[str, Any], certs: Mapping[str, str]) -> None:
@@ -439,9 +460,19 @@ class LeproCoordinator:
             for topic in subscription_topics(did):
                 client.subscribe(topic, qos=0)
             series = device.get("series") or device.get("pid")
+            scene_datapoints = tuple(dict.fromkeys(
+                candidate.get("dp") or candidate.get("command_type")
+                for scene in device.get("scenes", [])
+                if isinstance(scene, Mapping)
+                for candidate in scene.values()
+                if isinstance(candidate, Mapping)
+                and isinstance(candidate.get("dp") or candidate.get("command_type"), str)
+            ))
+            if "d50" in scene_datapoints:
+                scene_datapoints += ("d52",)
             client.publish(
                 topic_get(did),
-                json.dumps(make_get_payload(state_datapoints_for_series(series))),
+                json.dumps(make_get_payload(state_datapoints_for_series(series, scene_datapoints))),
                 qos=0,
             )
 
@@ -456,9 +487,13 @@ class LeproCoordinator:
         self.connected = False
         self._schedule_device_updates()
         if not self._stopping and _reason_failed(reason_code):
-            _LOGGER.debug("Lepro MQTT disconnected; paho will reconnect: %s", reason_code)
+            _LOGGER.debug(
+                "Lepro MQTT disconnected; paho will reconnect: %s", reason_code
+            )
 
-    def _on_message(self, _client: mqtt.Client, _userdata: Any, message: mqtt.MQTTMessage) -> None:
+    def _on_message(
+        self, _client: mqtt.Client, _userdata: Any, message: mqtt.MQTTMessage
+    ) -> None:
         try:
             parts = message.topic.split("/")
             if len(parts) < 4 or parts[0] != "le" or parts[2] != "prp":

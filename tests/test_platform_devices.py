@@ -26,7 +26,9 @@ def _install_platform_import_stubs() -> None:
         BRIGHTNESS="brightness", COLOR_TEMP="color_temp", HS="hs"
     )
     light_component.LightEntity = RecordingEntity
-    light_component.LightEntityFeature = type("LightEntityFeature", (int,), {"EFFECT": 1})
+    light_component.LightEntityFeature = type(
+        "LightEntityFeature", (int,), {"EFFECT": 1}
+    )
 
     switch_component = types.ModuleType("homeassistant.components.switch")
     switch_component.SwitchEntity = RecordingEntity
@@ -65,7 +67,9 @@ def _install_platform_import_stubs() -> None:
     sys.modules["homeassistant.components.switch"] = switch_component
     sys.modules["homeassistant.config_entries"] = config_entries
     sys.modules["homeassistant.core"] = homeassistant_core
-    sys.modules.setdefault("homeassistant.helpers", types.ModuleType("homeassistant.helpers"))
+    sys.modules.setdefault(
+        "homeassistant.helpers", types.ModuleType("homeassistant.helpers")
+    )
     sys.modules["homeassistant.helpers.entity"] = entity
     sys.modules["homeassistant.helpers.entity_platform"] = entity_platform
     sys.modules["homeassistant.const"] = homeassistant_const
@@ -110,7 +114,9 @@ class RecordingEntity:
 
 
 class FakeHass:
-    async def async_add_executor_job(self, target: Callable[..., Any], *args: Any) -> Any:
+    async def async_add_executor_job(
+        self, target: Callable[..., Any], *args: Any
+    ) -> Any:
         return target(*args)
 
 
@@ -214,7 +220,6 @@ def test_plug_switch_uses_d1_state_command_and_availability() -> None:
     coordinator.connected = False
     assert entity.available is False
 
-
     asyncio.run(entity.async_turn_off())
 
     assert coordinator.commands[-1] == ("plug-1", {"d1": 0})
@@ -230,10 +235,16 @@ def test_p1_plug_exposes_and_controls_its_button_lock() -> None:
     entities: list[Any] = []
 
     asyncio.run(
-        switch.async_setup_entry(FakeHass(), entry, lambda added: entities.extend(added))
+        switch.async_setup_entry(
+            FakeHass(), entry, lambda added: entities.extend(added)
+        )
     )
 
-    lock = next(entity for entity in entities if entity.device_id == "p1-1" and entity._attr_name == "Button Lock")
+    lock = next(
+        entity
+        for entity in entities
+        if entity.device_id == "p1-1" and entity._attr_name == "Button Lock"
+    )
     lock.hass = FakeHass()
     assert lock._attr_entity_category == "config"
     assert lock.is_on is None
@@ -286,9 +297,16 @@ def test_stv1_exposes_verified_status_and_auto_toggle_switches() -> None:
     coordinator.states["stv-1"] = {"online": 1, "d157": 1, "d172": 0}
     entry = types.SimpleNamespace(runtime_data=coordinator)
     entities: list[Any] = []
-    asyncio.run(switch.async_setup_entry(FakeHass(), entry, lambda added: entities.extend(added)))
+    asyncio.run(
+        switch.async_setup_entry(
+            FakeHass(), entry, lambda added: entities.extend(added)
+        )
+    )
     settings = [entity for entity in entities if entity.device_id == "stv-1"]
-    assert [entity._attr_name for entity in settings] == ["Status LED", "Auto-Toggle Lights"]
+    assert [entity._attr_name for entity in settings] == [
+        "Status LED",
+        "Auto-Toggle Lights",
+    ]
     assert all(entity._attr_entity_category == "config" for entity in settings)
     assert settings[0].is_on is True
     assert settings[1].is_on is False
@@ -336,7 +354,10 @@ def test_light_turn_on_honors_brightness_color_temp_and_hs_color() -> None:
     entity.hass = FakeHass()
 
     asyncio.run(entity.async_turn_on(brightness=128))
-    assert coordinator.commands[-1] == ("light-1", {"d1": 1, "d2": 0, "d3": 502, "d4": 500})
+    assert coordinator.commands[-1] == (
+        "light-1",
+        {"d1": 1, "d2": 0, "d3": 502, "d4": 500},
+    )
 
     asyncio.run(entity.async_turn_on(color_temp_kelvin=2700))
     assert coordinator.commands[-1] == (
@@ -445,7 +466,12 @@ def test_known_rgbic_uses_d52_before_its_first_state_report() -> None:
 def test_rgbic_light_uses_its_own_brightness_datapoint() -> None:
     light = _load_module("light")
     coordinator = FakeCoordinator()
-    coordinator.states["light-1"] = {"d2": 2, "d52": 500}
+    coordinator.states["light-1"] = {
+        "d2": 2,
+        "d5": "007801F403E8",
+        "d50": "N01:P10001FF9700E1;",
+        "d52": 500,
+    }
     entity = light.LeproCloudLight(
         coordinator, "light-1", coordinator.devices["light-1"]
     )
@@ -531,3 +557,24 @@ def test_light_updates_brightness_for_hsv_scene_payloads() -> None:
         {"d1": 1, "d2": 2, "d5": "007801F401F6"},
     )
     assert entity.effect == "Gradient"
+
+
+def test_light_uses_any_verified_scene_payload_when_mapping_is_unavailable() -> None:
+    light = _load_module("light")
+    coordinator = FakeCoordinator()
+    device = coordinator.devices["light-1"]
+    device.update(
+        {
+            "series": "OE1",
+            "scenes": [
+                {
+                    "name": "Saved",
+                    "floorlight": {"dp": "d50", "res": "N01:P10001FF9700E1;"},
+                }
+            ],
+        }
+    )
+    entity = light.LeproCloudLight(coordinator, "light-1", device)
+
+    assert entity.effect_list == ["Saved"]
+    assert entity._brightness_datapoint == "d52"

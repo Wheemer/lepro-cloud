@@ -144,6 +144,35 @@ def test_mqtt_connect_uses_the_app_qos_zero_startup_request() -> None:
     assert request["d"] == ["online", "d1", "d2", "d3", "d4", "d5", "d50", "d52"]
 
 
+def test_mqtt_connect_queries_scene_datapoints_for_unlisted_rgbic_series() -> None:
+    client_module = _load_client_module()
+    mqtt_client = RecordingMqttClient()
+    coordinator = client_module.LeproCoordinator.__new__(client_module.LeproCoordinator)
+    coordinator.devices = {
+        "tb2-1": {
+            "did": "tb2-1",
+            "series": "TB2",
+            "scenes": [
+                {
+                    "notelight": {
+                        "dp": "d50",
+                        "res": "N01:P10001FF9700E1;",
+                    }
+                }
+            ],
+        }
+    }
+    coordinator.connected = False
+    coordinator._schedule_device_updates = lambda: None
+
+    coordinator._on_connect(mqtt_client, None, None, 0, None)
+
+    request = json.loads(mqtt_client.publishes[0][1])
+    assert request["d"] == [
+        "online", "d1", "d2", "d3", "d4", "d5", "d50", "d52"
+    ]
+
+
 def test_full_status_reply_marks_device_online_when_online_is_omitted() -> None:
     class InlineLoop:
         def call_soon_threadsafe(self, callback: Any, *args: Any) -> None:

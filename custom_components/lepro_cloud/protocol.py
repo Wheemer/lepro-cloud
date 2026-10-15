@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import colorsys
 import re
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from random import randrange
 from typing import Any
 
@@ -84,20 +84,22 @@ def subscription_topics(device_id: str) -> tuple[str, ...]:
     )
 
 
-def state_datapoints_for_series(series: Any) -> tuple[str, ...]:
+def state_datapoints_for_series(
+    series: Any, extra_datapoints: Collection[str] = ()
+) -> tuple[str, ...]:
     """Return the APK's MQTT state query list for a product series."""
     name = str(series or "").upper()
     if name == "P1":
-        return PLUG_STATE_DATAPOINTS
-    if name in RGBIC_LENGTH_SERIES:
-        return RGBIC_LENGTH_STATE_DATAPOINTS
-    if name == "STV1":
-        return STV_STATE_DATAPOINTS
-    if name in RGBIC_MULTIPART_SCENE_SERIES:
-        return RGBIC_STATE_DATAPOINTS
-    if name in RGBIC_SERIES:
-        return RGBIC_STATE_DATAPOINTS
-    return BULB_STATE_DATAPOINTS
+        datapoints = PLUG_STATE_DATAPOINTS
+    elif name in RGBIC_LENGTH_SERIES:
+        datapoints = RGBIC_LENGTH_STATE_DATAPOINTS
+    elif name == "STV1":
+        datapoints = STV_STATE_DATAPOINTS
+    elif name in RGBIC_MULTIPART_SCENE_SERIES or name in RGBIC_SERIES:
+        datapoints = RGBIC_STATE_DATAPOINTS
+    else:
+        datapoints = BULB_STATE_DATAPOINTS
+    return tuple(dict.fromkeys((*datapoints, *extra_datapoints)))
 
 
 def is_complete_standard_state(state: Mapping[str, Any]) -> bool:

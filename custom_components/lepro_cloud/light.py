@@ -31,6 +31,7 @@ from .protocol import (
     MAX_HA_KELVIN,
     MIN_HA_KELVIN,
     WORK_MODE_COLOR,
+    WORK_MODE_SCENE,
     WORK_MODE_WHITE,
     brightness_payload,
     color_payload,
@@ -121,6 +122,10 @@ class LeproCloudLight(LightEntity):
         if (
             DP_RGBIC_BRIGHTNESS in state
             or DP_RGBIC_BRIGHTNESS in state_datapoints_for_series(series)
+            or any(
+                datapoint == "d50"
+                for datapoint, _value in self._scene_effects.values()
+            )
         ):
             return DP_RGBIC_BRIGHTNESS
         return DP_BRIGHTNESS
@@ -207,6 +212,19 @@ class LeproCloudLight(LightEntity):
             if not isinstance(scene, dict):
                 continue
             effect = scene.get(effect_type) if isinstance(effect_type, str) else None
+            if not isinstance(effect, dict):
+                effect = next(
+                    (
+                        candidate
+                        for candidate in scene.values()
+                        if isinstance(candidate, dict)
+                        and isinstance(
+                            candidate.get("dp") or candidate.get("command_type"), str
+                        )
+                        and isinstance(candidate.get("res"), str)
+                    ),
+                    None,
+                )
             if effect_type == "striplight" and not isinstance(effect, dict):
                 effect = scene.get("neonlight")
             if not isinstance(effect, dict):
@@ -286,8 +304,17 @@ class LeproCloudLight(LightEntity):
         elif ATTR_COLOR_TEMP_KELVIN in kwargs:
             values.update(white_payload(brightness, kwargs[ATTR_COLOR_TEMP_KELVIN]))
         elif ATTR_BRIGHTNESS in kwargs:
+            # Keep an active RGBIC scene in d2=2; the official app changes only d52.
+            if self._work_mode == WORK_MODE_SCENE:
+                values.update(
+                    brightness_payload(
+                        kwargs[ATTR_BRIGHTNESS],
+                        datapoint=self._brightness_datapoint,
+                        work_mode=WORK_MODE_SCENE,
+                    )
+                )
             # A brightness-only service call must not change the active colour mode.
-            if self.color_mode == ColorMode.HS and self.hs_color is not None:
+            elif self.color_mode == ColorMode.HS and self.hs_color is not None:
                 values.update(color_payload(self.hs_color, kwargs[ATTR_BRIGHTNESS]))
             elif (
                 self.color_mode == ColorMode.COLOR_TEMP

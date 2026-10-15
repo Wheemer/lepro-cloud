@@ -37,7 +37,9 @@ def _install_client_import_stubs() -> None:
     sys.modules.setdefault("homeassistant", homeassistant)
     sys.modules["homeassistant.core"] = homeassistant_core
     sys.modules["homeassistant.const"] = homeassistant_const
-    sys.modules.setdefault("homeassistant.helpers", types.ModuleType("homeassistant.helpers"))
+    sys.modules.setdefault(
+        "homeassistant.helpers", types.ModuleType("homeassistant.helpers")
+    )
     sys.modules["homeassistant.helpers.aiohttp_client"] = aiohttp_client
     sys.modules.setdefault("paho", paho)
     sys.modules["paho.mqtt"] = paho_mqtt
@@ -47,7 +49,9 @@ def _install_client_import_stubs() -> None:
 def _load_client_module() -> Any:
     _install_client_import_stubs()
     package = types.ModuleType("custom_components.lepro_cloud")
-    package.__path__ = [str(Path(__file__).resolve().parents[1] / "custom_components" / "lepro_cloud")]
+    package.__path__ = [
+        str(Path(__file__).resolve().parents[1] / "custom_components" / "lepro_cloud")
+    ]
     sys.modules.setdefault("custom_components", types.ModuleType("custom_components"))
     sys.modules["custom_components.lepro_cloud"] = package
     client_path = Path(package.__path__[0]) / "client.py"
@@ -128,6 +132,8 @@ def test_login_body_and_headers_use_unix_seconds(monkeypatch: Any) -> None:
     assert request["url"] == "https://api.example.invalid/user/login"
     assert request["data"]["timestamp"] == "1720000000"
     assert len(request["data"]["timestamp"]) == 10
+    assert request["data"]["mac"].startswith("02:")
+    assert request["data"]["mac"] != "00:00:00:00:00:00"
     assert request["headers"]["Timestamp"] == "1720000000"
     assert len(request["headers"]["Timestamp"]) == 10
 
@@ -220,9 +226,7 @@ def test_mqtt_setup_failure_cleans_up_certificates_and_is_retryable(
 
     monkeypatch.setattr(client_module.tempfile, "TemporaryDirectory", TempDirectory)
     monkeypatch.setattr(client_module.mqtt, "Client", FailingMqttClient)
-    coordinator = client_module.LeproCoordinator.__new__(
-        client_module.LeproCoordinator
-    )
+    coordinator = client_module.LeproCoordinator.__new__(client_module.LeproCoordinator)
     coordinator.api = types.SimpleNamespace(secret="test-secret")
     coordinator.tmp = None
     coordinator.client = None
@@ -278,7 +282,9 @@ def test_mqtt_disconnect_notifies_entities_of_availability_change() -> None:
 
 def test_certificate_http_failure_becomes_retryable_api_error() -> None:
     client_module = _load_client_module()
-    api = _api(client_module, RecordingSession([FakeResponse("unavailable", status=503)]))
+    api = _api(
+        client_module, RecordingSession([FakeResponse("unavailable", status=503)])
+    )
 
     try:
         asyncio.run(api.async_text("https://cert.example.invalid/client.pem"))
@@ -294,12 +300,14 @@ def test_device_scene_url_uses_the_app_scene_endpoint(monkeypatch: Any) -> None:
     session = RecordingSession([FakeResponse({"code": 0, "data": []})])
     api = _api(client_module, session)
 
-    assert asyncio.run(
-        api.async_device_scenes({"fid": "family-1", "did": "device-1"}, cursor=7)
-    ) == []
+    assert (
+        asyncio.run(
+            api.async_device_scenes({"fid": "family-1", "did": "device-1"}, cursor=7)
+        )
+        == []
+    )
     assert session.requests[0]["url"].endswith(
-        "/v3/scene/list/fid/family-1/did/device-1/cid/7/limit/6/"
-        "timestamp/1720000000"
+        "/v3/scene/list/fid/family-1/did/device-1/cid/7/limit/6/timestamp/1720000000"
     )
 
 
@@ -312,7 +320,9 @@ def test_device_scene_loader_follows_the_app_cursor() -> None:
         3: [],
     }
 
-    async def async_device_scenes(_device: Any, *, cursor: int = 0) -> list[dict[str, int]]:
+    async def async_device_scenes(
+        _device: Any, *, cursor: int = 0
+    ) -> list[dict[str, int]]:
         calls.append(cursor)
         return pages[cursor]
 
@@ -331,9 +341,7 @@ def test_account_region_lookup_uses_the_app_bootstrap_endpoint(
     session = RecordingSession(
         [FakeResponse({"code": 0, "data": {"apiHost": "api-eu-iot.lepro.com"}})]
     )
-    monkeypatch.setattr(
-        client_module, "async_get_clientsession", lambda _hass: session
-    )
+    monkeypatch.setattr(client_module, "async_get_clientsession", lambda _hass: session)
 
     region = asyncio.run(
         client_module.LeproApi.async_resolve_region(object(), "user@example.invalid")
