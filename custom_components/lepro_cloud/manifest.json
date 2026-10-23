@@ -2,6 +2,7 @@
   "domain": "lepro_cloud",
   "name": "Lepro Cloud",
   "after_dependencies": [],
+  "categories": ["lighting.bulbs_lamps", "lighting.led_strips_controllers", "plugs_switches"],
   "codeowners": [],
   "config_flow": true,
   "documentation": "https://github.com/Wheemer/lepro-cloud",
