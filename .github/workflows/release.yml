@@ -3,13 +3,14 @@ name: Publish Release
 on:
   workflow_dispatch:
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
   publish:
     name: Validate and publish ZIP
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout release tag
