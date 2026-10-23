@@ -1,6 +1,11 @@
 name: Scorecard Supply-Chain Security
 
 on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "41 17 * * 2"
   workflow_dispatch:
 
 permissions: {}

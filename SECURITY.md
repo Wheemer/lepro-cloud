@@ -1,31 +1,28 @@
 # Security Policy
 
-## Supported Use
+## Supported Versions
 
-This repository is private and intended for private Home Assistant use only.
-Do not redistribute builds that include Lepro artwork, APK-derived material,
-private MQTT keys, credentials, Home Assistant secrets, or deployment data.
+Security fixes are made in the latest released version of Lepro Cloud.
 
-## Reporting
+## Report a Vulnerability
 
-Report security concerns privately through the repository owner rather than by
-opening a public issue. Include reproduction steps, affected files, and whether
-any credential, token, MQTT key, certificate, or Home Assistant deployment
-detail may have been exposed.
+Please use [private vulnerability reporting](https://github.com/Wheemer/lepro-cloud/security/advisories/new)
+for security concerns. Do not open a public issue for a suspected vulnerability.
 
-## Secret Handling
+Include the affected version, reproduction steps, expected and actual behavior,
+and the potential impact. Do not include account passwords, access tokens,
+or Home Assistant configuration data in the report.
 
-- Do not commit MQTT key material, API credentials, APKs, certificates,
-  `.storage`, `secrets.yaml`, or Home Assistant configuration dumps.
-- Do not paste private Lepro credentials or MQTT keys into issues, workflow
-  logs, screenshots, or test fixtures.
-- Keep tests offline and deterministic. Mock protocol behavior instead of using
-  live accounts or devices.
+## Sensitive Information
 
-## Ownership Notice
+- Never commit user credentials, access tokens, certificates, `.storage`,
+  `secrets.yaml`, or Home Assistant configuration dumps.
+- Never include sensitive information in public issues, pull requests,
+  workflow logs, screenshots, or test fixtures.
+- Keep tests offline and deterministic; use mocks instead of live accounts or
+  devices.
 
-The MIT license covers clean-room code and repository documentation only.
-Lepro trademarks, names, logos, icons, product artwork, and any other
-Lepro-owned assets remain the property of their respective owners and are
-included only in this private repository for private interoperability and
-documentation purposes.
+## Disclosure
+
+Please allow time for the issue to be investigated and a fix to be released
+before discussing the vulnerability publicly.
