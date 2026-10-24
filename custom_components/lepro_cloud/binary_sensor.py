@@ -40,6 +40,7 @@ class LeproCloudConnectionSensor(BinarySensorEntity):
     _attr_name = "Cloud connection"
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_should_poll = False
 
     def __init__(
         self, coordinator: LeproCoordinator, device_id: str, device: dict[str, Any]

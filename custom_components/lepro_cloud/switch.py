@@ -61,6 +61,7 @@ class LeproCloudPlugSwitch(SwitchEntity):
 
     _attr_has_entity_name = True
     _attr_name = None
+    _attr_should_poll = False
 
     def __init__(
         self, coordinator: LeproCoordinator, device_id: str, device: dict[str, Any]
@@ -128,6 +129,7 @@ class LeproCloudPlugLockSwitch(LeproCloudPlugSwitch):
 
     _attr_name = "Button Lock"
     _attr_entity_category = EntityCategory.CONFIG
+    _attr_should_poll = False
 
     def __init__(
         self, coordinator: LeproCoordinator, device_id: str, device: dict[str, Any]
@@ -231,6 +233,7 @@ class LeproCloudStvSettingSwitch(SwitchEntity):
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.CONFIG
+    _attr_should_poll = False
 
     def __init__(
         self,

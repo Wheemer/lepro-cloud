@@ -33,6 +33,12 @@ def _install_platform_import_stubs() -> None:
     switch_component = types.ModuleType("homeassistant.components.switch")
     switch_component.SwitchEntity = RecordingEntity
 
+    binary_sensor_component = types.ModuleType("homeassistant.components.binary_sensor")
+    binary_sensor_component.BinarySensorDeviceClass = types.SimpleNamespace(
+        CONNECTIVITY="connectivity"
+    )
+    binary_sensor_component.BinarySensorEntity = RecordingEntity
+
     config_entries = types.ModuleType("homeassistant.config_entries")
     config_entries.ConfigEntry = object
 
@@ -45,7 +51,10 @@ def _install_platform_import_stubs() -> None:
     entity_platform.AddEntitiesCallback = Callable[..., None]
 
     homeassistant_const = types.ModuleType("homeassistant.const")
-    homeassistant_const.Platform = types.SimpleNamespace(LIGHT="light", SWITCH="switch")
+    homeassistant_const.EntityCategory = types.SimpleNamespace(DIAGNOSTIC="diagnostic")
+    homeassistant_const.Platform = types.SimpleNamespace(
+        BINARY_SENSOR="binary_sensor", LIGHT="light", SWITCH="switch"
+    )
 
     paho = types.ModuleType("paho")
     paho_mqtt = types.ModuleType("paho.mqtt")
@@ -63,6 +72,7 @@ def _install_platform_import_stubs() -> None:
     sys.modules.setdefault(
         "homeassistant.components", types.ModuleType("homeassistant.components")
     )
+    sys.modules["homeassistant.components.binary_sensor"] = binary_sensor_component
     sys.modules["homeassistant.components.light"] = light_component
     sys.modules["homeassistant.components.switch"] = switch_component
     sys.modules["homeassistant.config_entries"] = config_entries
@@ -578,3 +588,14 @@ def test_light_uses_any_verified_scene_payload_when_mapping_is_unavailable() -> 
 
     assert entity.effect_list == ["Saved"]
     assert entity._brightness_datapoint == "d52"
+
+
+def test_mqtt_entities_disable_home_assistant_polling() -> None:
+    light = _load_module("light")
+    switch = _load_module("switch")
+    binary_sensor = _load_module("binary_sensor")
+
+    assert light.LeproCloudLight._attr_should_poll is False
+    assert switch.LeproCloudPlugSwitch._attr_should_poll is False
+    assert switch.LeproCloudStvSettingSwitch._attr_should_poll is False
+    assert binary_sensor.LeproCloudConnectionSensor._attr_should_poll is False
