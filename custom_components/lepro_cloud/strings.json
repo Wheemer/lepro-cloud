@@ -16,6 +16,14 @@
           "username": "Email or phone",
           "password": "Password"
         }
+      },
+      "reauth_confirm": {
+        "title": "Reconnect Lepro Cloud",
+        "description": "Update your Lepro Home account credentials. Lepro selects the the appropriate regional server automatically.",
+        "data": {
+          "username": "Email or phone",
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -26,7 +34,8 @@
     },
     "abort": {
       "already_configured": "This Lepro Cloud account is already configured.",
-      "reconfigure_successful": "Lepro Cloud configuration updated."
+      "reconfigure_successful": "Lepro Cloud configuration updated.",
+      "reauth_successful": "Lepro Cloud reconnected."
     }
   }
 }

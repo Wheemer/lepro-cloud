@@ -103,6 +103,9 @@ class FakeConfigEntries:
     async def async_forward_entry_setups(self, _entry: Any, _platforms: list[Any]) -> None:
         return None
 
+    async def async_unload_platforms(self, _entry: Any, _platforms: list[Any]) -> bool:
+        return True
+
 
 class FakeHass:
     def __init__(self) -> None:
@@ -156,3 +159,19 @@ def test_platform_setup_failure_stops_the_mqtt_coordinator() -> None:
         raise AssertionError("expected platform setup failure")
     assert entry.runtime_data.started is True
     assert entry.runtime_data.stopped is True
+
+
+def test_unload_stops_mqtt_and_a_later_setup_creates_a_fresh_coordinator() -> None:
+    module = _load_integration_module()
+    hass = FakeHass()
+    entry = FakeEntry()
+
+    assert asyncio.run(module.async_setup_entry(hass, entry)) is True
+    first_coordinator = entry.runtime_data
+
+    assert asyncio.run(module.async_unload_entry(hass, entry)) is True
+    assert first_coordinator.stopped is True
+
+    assert asyncio.run(module.async_setup_entry(hass, entry)) is True
+    assert entry.runtime_data is not first_coordinator
+    assert entry.runtime_data.started is True

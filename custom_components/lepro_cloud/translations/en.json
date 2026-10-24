@@ -1,0 +1,41 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Lepro Cloud",
+        "description": "Sign in with your Lepro Home account. Lepro selects the account's regional server automatically.",
+        "data": {
+          "username": "Email or phone",
+          "password": "Password"
+        }
+      },
+      "reconfigure": {
+        "title": "Update Lepro Cloud",
+        "description": "Update your Lepro Home account credentials. Lepro selects the account's regional server automatically.",
+        "data": {
+          "username": "Email or phone",
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Reconnect Lepro Cloud",
+        "description": "Update your Lepro Home account credentials. Lepro selects the the appropriate regional server automatically.",
+        "data": {
+          "username": "Email or phone",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "already_configured": "This Lepro Cloud account is already configured.",
+      "cannot_connect": "Could not connect to Lepro Cloud.",
+      "invalid_auth": "Invalid Lepro Cloud credentials.",
+      "invalid_response": "Lepro Cloud rejected the login request."
+    },
+    "abort": {
+      "already_configured": "This Lepro Cloud account is already configured.",
+      "reconfigure_successful": "Lepro Cloud configuration updated.",
+      "reauth_successful": "Lepro Cloud reconnected."
+    }
+  }
+}
