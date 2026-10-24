@@ -66,6 +66,7 @@ class LeproCloudLight(LightEntity):
 
     _attr_has_entity_name = True
     _attr_name = None
+    _attr_should_poll = False
 
     def __init__(
         self, coordinator: LeproCoordinator, device_id: str, device: dict[str, Any]
