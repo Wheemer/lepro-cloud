@@ -45,6 +45,9 @@ def _load_config_flow_module() -> Any:
         def _get_reconfigure_entry(self) -> Any:
             return self.hass.config_entries.reconfigure_entry
 
+        def _get_reauth_entry(self) -> Any:
+            return self.hass.config_entries.reauth_entry
+
         def async_show_form(self, **kwargs: Any) -> dict[str, Any]:
             return {"type": "form", **kwargs}
 
@@ -60,7 +63,7 @@ def _load_config_flow_module() -> Any:
                 unique_id=kwargs.get("unique_id", entry.unique_id),
             )
             self.hass.config_entries.async_schedule_reload(entry.entry_id)
-            return {"type": "abort", "reason": "reconfigure_successful"}
+            return {"type": "abort", "reason": kwargs.get("reason", "reconfigure_successful")}
 
     config_entries = types.ModuleType("homeassistant.config_entries")
     config_entries.ConfigFlow = ConfigFlow
@@ -385,3 +388,72 @@ def test_reconfigure_rejects_duplicate_other_entry_after_login(
     assert result["type"] == "form"
     assert result["errors"] == {"base": "already_configured"}
     assert entry.data["username"] == "one@example.com"
+
+
+def test_reauth_updates_credentials_and_reloads_existing_entry(
+    monkeypatch: Any,
+) -> None:
+    module = _load_config_flow_module()
+    entry = _entry(
+        entry_id="one",
+        username="user@example.com",
+        password="old-password",
+        region="north_america",
+    )
+    config_entries = _ConfigEntries([entry], reconfigure_entry=None)
+    config_entries.reauth_entry = entry
+    flow = module.LeproCloudFlow()
+    flow.hass = types.SimpleNamespace(config_entries=config_entries, data={})
+
+    async def account_region(hass: Any, username: str) -> str:
+        assert hass is flow.hass
+        assert username == "user@example.com"
+        return "europe"
+
+    class Api:
+        def __init__(self, hass: Any, region: str) -> None:
+            assert hass is flow.hass
+            assert region == "europe"
+
+        async def async_login(self, username: str, password: str) -> None:
+            assert username == "user@example.com"
+            assert password == "new-password"
+
+    monkeypatch.setattr(module, "_async_account_region", account_region)
+    monkeypatch.setattr(module, "LeproApi", Api)
+
+    result = asyncio.run(
+        flow.async_step_reauth_confirm(
+            {"username": " user@example.com ", "password": " new-password "}
+        )
+    )
+
+    assert result == {"type": "abort", "reason": "reauth_successful"}
+    assert entry.data == {
+        "username": "user@example.com",
+        "password": "new-password",
+        "region": "europe",
+    }
+    assert entry.unique_id == "europe:user@example.com"
+    assert config_entries.reloads == ["one"]
+
+
+def test_reauth_starts_confirmation_with_stored_username() -> None:
+    module = _load_config_flow_module()
+    entry = _entry(
+        entry_id="one",
+        username="user@example.com",
+        password="secret",
+        region="europe",
+    )
+    config_entries = _ConfigEntries([entry], reconfigure_entry=None)
+    config_entries.reauth_entry = entry
+    flow = module.LeproCloudFlow()
+    flow.hass = types.SimpleNamespace(config_entries=config_entries)
+
+    result = asyncio.run(flow.async_step_reauth(entry.data))
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "reauth_confirm"
+    fields = {field.key: field.default for field in result["data_schema"]}
+    assert fields == {"username": "user@example.com", "password": None}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -147,6 +148,58 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reconfigure",
+            data_schema=_credentials_schema(username=entry.data[CONF_USERNAME]),
+            errors=errors,
+        )
+
+    async def async_step_reauth(
+        self, entry_data: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Handle a request to reauthenticate an existing entry."""
+        del entry_data
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Confirm updated credentials and reload the existing entry."""
+        entry = self._get_reauth_entry()
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            username = user_input[CONF_USERNAME].strip()
+            password = user_input[CONF_PASSWORD].strip()
+            try:
+                region = await _async_account_region(self.hass, username)
+                api = LeproApi(self.hass, region)
+                await api.async_login(username, password)
+            except LeproApiError as err:
+                _log_api_error(err)
+                errors["base"] = _flow_error(err)
+            else:
+                unique_id = _account_unique_id(region, username)
+                duplicate_entry = await self.async_set_unique_id(unique_id)
+                if (
+                    duplicate_entry is not None
+                    and duplicate_entry.entry_id != entry.entry_id
+                ):
+                    errors["base"] = "already_configured"
+                else:
+                    cache_authenticated_api(self.hass, unique_id, api)
+                    return self.async_update_reload_and_abort(
+                        entry,
+                        unique_id=unique_id,
+                        title=f"Lepro Cloud ({username})",
+                        data_updates={
+                            CONF_USERNAME: username,
+                            CONF_PASSWORD: password,
+                            CONF_REGION: region,
+                        },
+                        reason="reauth_successful",
+                    )
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
             data_schema=_credentials_schema(username=entry.data[CONF_USERNAME]),
             errors=errors,
         )
