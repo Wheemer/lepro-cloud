@@ -273,10 +273,11 @@ def test_mqtt_disconnect_notifies_entities_of_availability_change() -> None:
 
     coordinator._on_disconnect(None, None, None, 1, None)
 
-    assert coordinator.connected is False
+    assert coordinator.connected is True  # Only the event-loop callback mutates state.
     assert len(queued) == 1
     callback, args = queued.pop()
     callback(*args)
+    assert coordinator.connected is False
     assert notified == ["light-1"]
 
 
@@ -331,6 +332,12 @@ def test_device_scene_loader_follows_the_app_cursor() -> None:
     coordinator.devices = {"device-1": {"did": "device-1"}}
 
     asyncio.run(coordinator._load_device_scenes())
+    assert calls == [0, 2, 3]
+    assert coordinator.devices["device-1"]["scenes"] == [
+        {"cid": 1},
+        {"cid": 2},
+        {"cid": 3},
+    ]
 
 
 def test_account_region_lookup_uses_the_app_bootstrap_endpoint(

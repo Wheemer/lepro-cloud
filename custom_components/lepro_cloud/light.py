@@ -167,13 +167,25 @@ class LeproCloudLight(LightEntity):
         state = self.coordinator.states.get(self.device_id, {})
         modes = set()
         picker = self.device.get("_color_picker")
+        if not isinstance(picker, str):
+            picker = None
+        if picker == "":
+            return {ColorMode.BRIGHTNESS}
         if picker == "rgbcw":
             return {ColorMode.HS, ColorMode.COLOR_TEMP}
-        if picker == "rgb":
+        if picker in {
+            "rgb",
+            "diy",
+            "diy2",
+            "diyEaves",
+            "diyStar",
+            "diyString",
+            "diyMusic",
+        }:
             return {ColorMode.HS}
-        if DP_COLOR in state:
+        if parse_lepro_hsv(state.get(DP_COLOR)) is not None:
             modes.add(ColorMode.HS)
-        if DP_TEMPERATURE in state:
+        if lepro_temperature_to_kelvin(state.get(DP_TEMPERATURE)) is not None:
             modes.add(ColorMode.COLOR_TEMP)
         return modes or {ColorMode.BRIGHTNESS}
 
@@ -360,10 +372,10 @@ class LeproCloudLight(LightEntity):
                 else:
                     values[DP_RGBIC_BRIGHTNESS] = level(effect=True)
             # A brightness-only service call must not change the active colour mode.
-            elif self.color_mode == ColorMode.HS and self.hs_color is not None:
+            elif self._work_mode == WORK_MODE_COLOR and self.hs_color is not None:
                 values.update(color_payload(self.hs_color, kwargs[ATTR_BRIGHTNESS]))
             elif (
-                self.color_mode == ColorMode.COLOR_TEMP
+                self._work_mode == WORK_MODE_WHITE
                 and self.color_temp_kelvin is not None
             ):
                 values.update(

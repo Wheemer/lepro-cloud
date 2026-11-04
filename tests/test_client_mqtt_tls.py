@@ -136,6 +136,7 @@ def test_mqtt_connect_uses_the_app_qos_zero_startup_request() -> None:
         loop=types.SimpleNamespace(call_soon_threadsafe=lambda fn, *args: fn(*args))
     )
     coordinator._schedule_device_updates = lambda: None
+    coordinator.client = mqtt_client
 
     coordinator._on_connect(mqtt_client, None, None, 0, None)
 
@@ -181,6 +182,7 @@ def test_mqtt_connect_queries_scene_datapoints_for_unlisted_rgbic_series() -> No
         loop=types.SimpleNamespace(call_soon_threadsafe=lambda fn, *args: fn(*args))
     )
     coordinator._schedule_device_updates = lambda: None
+    coordinator.client = mqtt_client
 
     coordinator._on_connect(mqtt_client, None, None, 0, None)
 

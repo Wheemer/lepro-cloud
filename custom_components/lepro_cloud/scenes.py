@@ -24,10 +24,12 @@ EFFECT_FAMILIES = frozenset(
 
 def effect_family(device: dict[str, Any], mapping: dict[str, str]) -> str | None:
     series = str(device.get("series") or device.get("pid") or "").upper()
-    return (
-        mapping.get(series)
-        or device.get("effect")
-        or next(
+    if series in mapping:
+        candidate = mapping[series]
+        return candidate if isinstance(candidate, str) else None
+    candidate = device.get("effect")
+    if not isinstance(candidate, str) or not candidate:
+        candidate = next(
             (
                 item.get("effect")
                 for item in PRODUCT_CONFIGS
@@ -35,7 +37,7 @@ def effect_family(device: dict[str, Any], mapping: dict[str, str]) -> str | None
             ),
             None,
         )
-    )
+    return candidate if isinstance(candidate, str) else None
 
 
 def selected_effect(

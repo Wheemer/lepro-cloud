@@ -45,7 +45,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except BaseException:
         # MQTT has already started at this point. Do not leave the transport
         # running if a platform cannot be created and Home Assistant retries.
-        await coordinator.async_stop()
+        try:
+            await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+        finally:
+            await coordinator.async_stop()
         raise
     entry.async_on_unload(
         hass.bus.async_listen_once(

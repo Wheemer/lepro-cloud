@@ -378,23 +378,45 @@ class LeproCoordinator:
             for device in devices
             if device.get("did") and is_supported_device(device)
         }
-        configs = list(PRODUCT_CONFIGS)
+        await self._load_product_configs()
+        await self._load_device_scenes()
+        info = _mqtt_info(profile)
+        try:
+            key = await self.hass.async_add_executor_job(load_mqtt_private_key)
+        except MqttKeyError as err:
+            raise LeproMqttError(str(err)) from err
+        certs = await self._resolve_certs(info, key, self.api.secret or "")
+        await self._async_start_mqtt(info, certs)
+        self._profile_signature = self._signature(info, certs)
+        self._maintenance_task = self.hass.async_create_background_task(
+            self._maintain_session(), "Lepro Cloud refresh"
+        )
+
+    async def _load_product_configs(self) -> bool:
+        """Refresh reviewed capabilities; preserve the last good remote data."""
+        before = {
+            did: (device.get("_color_picker"), effect_family(device, self.effect_types))
+            for did, device in self.devices.items()
+        }
+        configs = [
+            dict(item) for item in getattr(self, "_product_configs", PRODUCT_CONFIGS)
+        ]
         try:
             remote_configs = await self.api.async_product_configs()
         except LeproApiError as err:
             _LOGGER.debug("Unable to load Lepro effect configuration: %s", err)
         else:
-            configs = list(
-                {
-                    str(item["series"]).upper(): item
-                    for item in [*configs, *remote_configs]
-                    if item.get("series")
-                }.values()
-            )
+            merged = {str(item["series"]).upper(): item for item in configs}
+            for item in remote_configs:
+                if item.get("series"):
+                    series = str(item["series"]).upper()
+                    merged.setdefault(series, {}).update(item)
+            configs = list(merged.values())
+        self._product_configs = configs
         self.effect_types = {
             str(item["series"]).upper(): str(item["effect"])
             for item in configs
-            if item.get("series") and item.get("effect") not in (None, "", "null")
+            if item.get("series")
         }
         for device in self.devices.values():
             config = next(
@@ -407,17 +429,10 @@ class LeproCoordinator:
                 {},
             )
             device["_color_picker"] = config.get("colorPicker")
-        await self._load_device_scenes()
-        info = _mqtt_info(profile)
-        try:
-            key = await self.hass.async_add_executor_job(load_mqtt_private_key)
-        except MqttKeyError as err:
-            raise LeproMqttError(str(err)) from err
-        certs = await self._resolve_certs(info, key, self.api.secret or "")
-        await self._async_start_mqtt(info, certs)
-        self._profile_signature = self._signature(info, certs)
-        self._maintenance_task = self.hass.async_create_background_task(
-            self._maintain_session(), "Lepro Cloud refresh"
+        return any(
+            before[did]
+            != (device.get("_color_picker"), effect_family(device, self.effect_types))
+            for did, device in self.devices.items()
         )
 
     @staticmethod
@@ -443,7 +458,7 @@ class LeproCoordinator:
             await asyncio.shield(task)
         except asyncio.CancelledError:
             # A cancelled executor await does not stop its worker. Collect it first.
-            await task
+            await asyncio.gather(task, return_exceptions=True)
             await self._stop_transport()
             raise
 
@@ -477,14 +492,21 @@ class LeproCoordinator:
             return
         self._reauth_requested = True
         task = self._maintenance_task
-        if task is not None and task is not asyncio.current_task():
-            task.cancel()
-            with suppress(asyncio.CancelledError):
-                await task
         try:
+            if task is not None and task is not asyncio.current_task():
+                task.cancel()
+                # A previously failed background task must not prevent the prompt.
+                await asyncio.gather(task, return_exceptions=True)
             await self._stop_transport()
         finally:
-            self.entry.async_start_reauth(self.hass)
+            if self._maintenance_task is task:
+                self._maintenance_task = None
+            if not self._stopping:
+                self.entry.async_start_reauth(self.hass)
+
+    def _schedule_reload(self) -> None:
+        cache_authenticated_api(self.hass, self.entry.unique_id, self.api)
+        self.hass.config_entries.async_schedule_reload(self.entry.entry_id)
 
     async def _refresh_session(self) -> None:
         profile = await self.api.async_profile()
@@ -496,10 +518,27 @@ class LeproCoordinator:
             self.devices[did].get(key) != device.get(key)
             for did, device in discovered.items()
             if did in self.devices
-            for key in ("name", "fwVersion", "hwVersion", "series", "control")
+            for key in (
+                "name",
+                "friendlyName",
+                "nickname",
+                "deviceName",
+                "devName",
+                "fwVersion",
+                "hwVersion",
+                "series",
+                "control",
+                "effect",
+                "fid",
+                "type",
+                "deviceType",
+                "devType",
+                "pid",
+                "mac",
+                "deviceSn",
+            )
         ):
-            cache_authenticated_api(self.hass, self.entry.unique_id, self.api)
-            self.hass.config_entries.async_schedule_reload(self.entry.entry_id)
+            self._schedule_reload()
             return
         for did, device in discovered.items():
             # Preserve the dict referenced by entities; replace the source scenes.
@@ -508,6 +547,9 @@ class LeproCoordinator:
             old.clear()
             old.update(device)
             old["_color_picker"] = picker
+        if await self._load_product_configs():
+            self._schedule_reload()
+            return
         await self._load_device_scenes()
         info = _mqtt_info(profile)
         key = await self.hass.async_add_executor_job(load_mqtt_private_key)
@@ -657,9 +699,8 @@ class LeproCoordinator:
 
     def _on_connect_fail(self, _client: mqtt.Client, _userdata: Any) -> None:
         """Expose an unavailable transport while Paho keeps retrying."""
-        self.connected = False
+        self.hass.loop.call_soon_threadsafe(self._set_transport_state, _client, False)
         self._request_refresh()
-        self._schedule_device_updates()
         _LOGGER.debug("Lepro MQTT connection attempt failed; Paho will reconnect")
 
     def _on_connect(
@@ -677,12 +718,11 @@ class LeproCoordinator:
         if _reason_failed(reason_code):
             self._request_refresh()
             _LOGGER.warning("Lepro MQTT connection failed: %s", reason_code)
-            self.connected = False
-            self._schedule_device_updates()
+            self.hass.loop.call_soon_threadsafe(
+                self._set_transport_state, client, False
+            )
             return
-        self.connected = True
-        self.hass.loop.call_soon_threadsafe(self._reset_freshness)
-        self._schedule_device_updates()
+        self.hass.loop.call_soon_threadsafe(self._set_transport_state, client, True)
         for did, device in self.devices.items():
             for topic in subscription_topics(did):
                 self._check_subscription(client.subscribe(topic, qos=0))
@@ -710,6 +750,10 @@ class LeproCoordinator:
                 qos=0,
             )
             if result is not None and result.rc != mqtt.MQTT_ERR_SUCCESS:
+                _LOGGER.warning("Lepro MQTT initial state query failed")
+                self.hass.loop.call_soon_threadsafe(
+                    self._set_transport_state, client, False
+                )
                 self._request_refresh()
         secret = getattr(getattr(self, "api", None), "secret", None)
         if secret:
@@ -720,6 +764,9 @@ class LeproCoordinator:
     def _check_subscription(self, result: Any) -> None:
         if result is not None and result[0] != mqtt.MQTT_ERR_SUCCESS:
             _LOGGER.warning("Lepro MQTT subscription failed")
+            self.hass.loop.call_soon_threadsafe(
+                self._set_transport_state, self.client, False
+            )
             self._request_refresh()
 
     def _on_subscribe(
@@ -733,19 +780,25 @@ class LeproCoordinator:
         if self._stopping or client is not self.client:
             return
         if any(_reason_failed(code) for code in reason_codes):
-            self.connected = False
             _LOGGER.warning("Lepro broker rejected a subscription")
-            self._schedule_device_updates()
+            self.hass.loop.call_soon_threadsafe(
+                self._set_transport_state, client, False
+            )
             self._request_refresh()
 
     def _request_refresh(self) -> None:
         if hasattr(self, "_refresh_requested"):
             self.hass.loop.call_soon_threadsafe(self._refresh_requested.set)
 
-    def _reset_freshness(self) -> None:
-        self._fresh = set()
-        for state in self.states.values():
-            state.pop(DP_ONLINE, None)
+    def _set_transport_state(self, client: mqtt.Client, connected: bool) -> None:
+        """Serialize connection state and freshness with HA entity reads."""
+        if self._stopping or client is not getattr(self, "client", None):
+            return
+        if connected:
+            self._fresh = set()
+            for state in self.states.values():
+                state.pop(DP_ONLINE, None)
+        self.connected = connected
         self._notify_all()
 
     def device_available(self, did: str) -> bool:
@@ -765,8 +818,7 @@ class LeproCoordinator:
     ) -> None:
         if getattr(self, "client", None) is not None and _client is not self.client:
             return
-        self.connected = False
-        self._schedule_device_updates()
+        self.hass.loop.call_soon_threadsafe(self._set_transport_state, _client, False)
         if not self._stopping and _reason_failed(reason_code):
             _LOGGER.debug(
                 "Lepro MQTT disconnected; paho will reconnect: %s", reason_code

@@ -178,11 +178,25 @@ def test_platforms_expose_only_verified_device_types() -> None:
     assert not switch._is_supported_switch({})
 
 
-def test_device_name_hides_lepro_appended_identifier() -> None:
+def test_device_name_preserves_user_text_and_only_cleans_a_proven_factory_name() -> (
+    None
+):
     device = _load_module("device")
-
-    assert device.device_name({"name": "girls room_U5O5"}) == "girls room"
-    assert device.device_name({"name": "Kitchen_TV"}) == "Kitchen_TV"
+    assert device.device_name({"name": "Kitchen_ABCD"}) == "Kitchen_ABCD"
+    assert (
+        device.device_name({"name": "girls room_U5O5", "friendlyName": "girls room"})
+        == "girls room"
+    )
+    assert (
+        device.device_name({"name": "TB1_U5O5", "series": "TB1", "deviceSn": "U5O5"})
+        == "TB1"
+    )
+    assert (
+        device.device_name(
+            {"name": "girls room_U5O5", "series": "TB1", "deviceSn": "U5O5"}
+        )
+        == "girls room_U5O5"
+    )
 
 
 def test_setup_entry_adds_lights_and_switches() -> None:

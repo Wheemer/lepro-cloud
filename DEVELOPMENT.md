@@ -55,3 +55,23 @@ The manual release verification workflow validates a supplied version tag,
 checks it against the manifest version, runs tests, compiles Python sources,
 runs HACS validation, and uploads a staged zip artifact for review. It does not
 create a GitHub release, publish assets to a release, or push tags.
+
+
+## Dependency updates
+
+The runtime uses the stable Paho release pinned in `requirements-runtime.in`.
+The HA manifest, runtime installation lock and CI test lock must agree. CI checks
+that relationship so a bot cannot update only the tests while leaving the
+integration on a different version.
+
+CI and isolated test-image builds install with `--require-hashes`. To refresh
+the locks after reviewing a dependency update:
+
+```bash
+uv pip compile requirements-runtime.in --python-version 3.12 --generate-hashes -o requirements-runtime.txt
+uv pip compile requirements-test.in --python-version 3.12 --generate-hashes -o requirements-test.txt
+python scripts/check_dependency_versions.py --sync
+python -m pytest
+```
+
+Paho 2.1.0 is a normal upstream release; it is not a test build or prerelease.

@@ -2,16 +2,10 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 DEVICE_TYPE_LIGHT = 1
 DEVICE_TYPE_PLUG = 2
-
-# Lepro appends a four-character opaque identifier to some user-assigned device
-# names (for example, ``girls room_U5O5``). It is not part of the name a user
-# chose and should not be presented as one in Home Assistant.
-_APPENDED_NAME_SUFFIX = re.compile(r"^(?P<name>.+?)_[A-Z0-9]{4}$")
 
 
 def device_type(device: dict[str, Any]) -> int | None:
@@ -37,8 +31,13 @@ def device_name(device: dict[str, Any], fallback: str = "Lepro Device") -> str:
         value = device.get(key)
         if value:
             name = str(value).strip()
-            match = _APPENDED_NAME_SUFFIX.match(name)
-            return match.group("name") if match else name
+            # The APK displays DeviceEntity.name verbatim. An underscore and
+            # four characters alone do not prove that a user name has a suffix.
+            # AddDeviceNewActivity creates factory names as series_deviceSn.
+            series, serial = device.get("series"), device.get("deviceSn")
+            if key == "name" and series and serial and name == f"{series}_{serial}":
+                return str(series)
+            return name
     return fallback
 
 

@@ -496,6 +496,7 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
         self,
     ):
         self.co._on_subscribe(self.broker, None, 1, [128], None)
+        await self.hass.async_block_till_done()
         self.assertFalse(self.co.connected)
         self.co.connected = True
         self.broker.publish = lambda *args, **kwargs: (_ for _ in ()).throw(
@@ -574,6 +575,350 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             self.co._signature(first, certs), self.co._signature(second, certs)
         )
+
+    async def test_product_metadata_refresh_merges_fields_and_retains_last_good_data(
+        self,
+    ):
+        self.co.devices = {"lamp": {"type": 1, "did": "lamp", "series": "B1"}}
+        self.co.api = SimpleNamespace(
+            async_product_configs=AsyncMock(
+                side_effect=[
+                    [{"series": "B1", "effect": "smartbulb", "colorPicker": "rgb"}],
+                    client.LeproApiError("fixture"),
+                    [{"series": "B1", "effect": "smartbulb", "colorPicker": "rgbcw"}],
+                ]
+            )
+        )
+        self.assertTrue(await self.co._load_product_configs())
+        self.assertEqual(self.co.devices["lamp"]["_color_picker"], "rgb")
+        self.assertFalse(await self.co._load_product_configs())
+        self.assertEqual(self.co.devices["lamp"]["_color_picker"], "rgb")
+        self.assertTrue(await self.co._load_product_configs())
+        self.assertEqual(self.co.devices["lamp"]["_color_picker"], "rgbcw")
+
+    async def test_all_known_picker_capabilities_are_stable_before_reports(self):
+        for picker in (
+            "",
+            "rgb",
+            "diy",
+            "diy2",
+            "diyEaves",
+            "diyStar",
+            "diyString",
+            "diyMusic",
+        ):
+            entity = light.LeproCloudLight(
+                self.co, "lamp", {"type": 1, "_color_picker": picker}
+            )
+            before = entity.supported_color_modes
+            self.co.states["lamp"] = {"d4": 0, "d5": "000000000000"}
+            self.assertEqual(before, entity.supported_color_modes)
+            self.assertEqual(
+                before,
+                {light.ColorMode.BRIGHTNESS} if picker == "" else {light.ColorMode.HS},
+            )
+            self.co.states.clear()
+        entity = light.LeproCloudLight(
+            self.co, "lamp", {"type": 1, "_color_picker": "rgbcw"}
+        )
+        self.assertEqual(
+            entity.supported_color_modes,
+            {light.ColorMode.HS, light.ColorMode.COLOR_TEMP},
+        )
+
+    async def test_initial_rest_failure_cancels_its_sibling_request(self):
+        cancelled = []
+
+        async def devices():
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.append(True)
+
+        async def profile():
+            await asyncio.sleep(0)
+            raise client.LeproAuthError("fixture")
+
+        self.co.api = SimpleNamespace(
+            token="fixture",
+            secret="fixture",
+            async_profile=profile,
+            async_devices=devices,
+        )
+        with self.assertRaises(client.LeproAuthError):
+            await self.co.async_start()
+        self.assertEqual(cancelled, [True])
+
+    async def test_account_disable_and_unknown_actions_only_request_discovery(self):
+        self.co.api.secret = "fixture-secret"
+        for action in ("unknown", "disDevice"):
+            self.co._on_message(
+                self.broker,
+                None,
+                SimpleNamespace(
+                    topic="le/fixture-secret/act/app/exe",
+                    payload=json.dumps({"d": {"action": action}}).encode(),
+                ),
+            )
+            if action == "disDevice":
+                await asyncio.wait_for(self.co._refresh_requested.wait(), timeout=1)
+            else:
+                await asyncio.sleep(0)
+            self.assertEqual(self.co._refresh_requested.is_set(), action == "disDevice")
+        self.assertFalse(self.reauth)
+        self.assertFalse(self.broker.messages)
+
+    async def test_name_and_user_override_survive_registry_refresh(self):
+        from custom_components.lepro_cloud.device import device_name
+
+        self.assertEqual(device_name({"name": "Room_ABCD"}), "Room_ABCD")
+        self.assertEqual(
+            device_name({"name": "TB1_ABCD", "series": "TB1", "deviceSn": "ABCD"}),
+            "TB1",
+        )
+        self.assertEqual(
+            device_name({"name": "Room_ABCD", "friendlyName": "Girls room"}),
+            "Girls room",
+        )
+
+    async def test_runtime_paho_matches_the_pinned_manifest(self):
+        from importlib.metadata import version
+
+        manifest = json.loads(
+            (Path(client.__file__).parent / "manifest.json").read_text()
+        )
+        self.assertEqual(
+            manifest["requirements"], ["paho-mqtt==" + version("paho-mqtt")]
+        )
+
+    async def test_partial_platform_forward_failure_unloads_already_added_entities(
+        self,
+    ):
+        hass = await self._prepare_platforms()
+        kwargs = {
+            "domain": "lepro_cloud",
+            "title": "Partial failure",
+            "data": self.entry.data,
+            "options": {},
+            "source": "user",
+            "unique_id": self.entry.unique_id,
+            "version": 1,
+            "minor_version": 1,
+            "discovery_keys": MappingProxyType({}),
+            "subentries_data": [],
+        }
+        entry = ConfigEntry(
+            **{
+                k: v
+                for k, v in kwargs.items()
+                if k in inspect.signature(ConfigEntry).parameters
+            }
+        )
+        started = []
+
+        async def start(co):
+            co.devices = {
+                "lamp": {"type": 1, "did": "lamp", "series": "B1", "name": "Audit lamp"}
+            }
+            co.connected = True
+            co._fresh = {"lamp"}
+            co.states = {"lamp": {"d1": 1, "online": 1}}
+            started.append(co)
+
+        real_forward = hass.config_entries.async_forward_entry_setups
+
+        async def partial(entry, platforms):
+            await real_forward(entry, ["light"])
+            raise RuntimeError("fixture platform failure")
+
+        with (
+            patch.object(client.LeproCoordinator, "async_start", start),
+            patch.object(
+                hass.config_entries, "async_forward_entry_setups", side_effect=partial
+            ),
+            self.assertLogs("homeassistant.config_entries", level="ERROR"),
+        ):
+            await hass.config_entries.async_add(entry)
+            await hass.async_block_till_done()
+        self.assertEqual(len(started[0].listeners), 0)
+        self.assertIsNone(started[0].client)
+        self.assertFalse(started[0].connected)
+        # HA Entity.async_remove deliberately retains registered unavailable
+        # placeholders. No active entity listener or transport may survive.
+        self.assertTrue(
+            all(
+                state.state == "unavailable"
+                for state in hass.states.async_all()
+                if state.entity_id.startswith("light.")
+            )
+        )
+
+    async def test_connection_and_suback_are_applied_in_order_without_stale_success(
+        self,
+    ):
+        self.co.connected = False
+        self.co._on_connect(self.broker, None, None, 0, None)
+        self.assertFalse(self.co.connected)
+        self.co._on_subscribe(self.broker, None, 1, [128], None)
+        await self.hass.async_block_till_done()
+        self.assertFalse(self.co.connected)
+
+    async def test_queued_connection_callback_cannot_revive_a_replaced_client(self):
+        self.co.connected = False
+        self.co._on_connect(self.broker, None, None, 0, None)
+        self.co.client = Broker()
+        await self.hass.async_block_till_done()
+        self.assertFalse(self.co.connected)
+
+    async def test_initial_query_failure_marks_transport_unready(self):
+        self.broker.publish = lambda *args, **kwargs: SimpleNamespace(rc=1)
+        self.co.connected = False
+        self.co._on_connect(self.broker, None, None, 0, None)
+        await self.hass.async_block_till_done()
+        self.assertFalse(self.co.connected)
+        self.assertTrue(self.co._refresh_requested.is_set())
+
+    async def test_forced_logout_reauth_survives_an_already_failed_refresh_task(self):
+        async def fail():
+            raise RuntimeError("fixture")
+
+        self.co._maintenance_task = asyncio.create_task(fail())
+        await asyncio.sleep(0)
+        await self.co._require_reauth()
+        self.assertEqual(self.reauth, [True])
+        self.assertIsNone(self.co.client)
+        self.assertFalse(self.co.connected)
+
+    async def test_cancelled_startup_stays_cancelled_when_worker_also_fails(self):
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def executor(fn, *args):
+            started.set()
+            await release.wait()
+            raise client.LeproMqttError("fixture")
+
+        with (
+            patch.object(self.hass, "async_add_executor_job", side_effect=executor),
+            patch.object(self.co, "_stop_transport", new_callable=AsyncMock) as stop,
+        ):
+            task = asyncio.create_task(self.co._async_start_mqtt({}, {}))
+            await started.wait()
+            task.cancel()
+            release.set()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+            stop.assert_awaited_once()
+
+    async def test_unload_during_reauth_cleanup_does_not_start_a_new_flow(self):
+        started = asyncio.Event()
+        release = asyncio.Event()
+        original = self.co._stop_transport
+
+        async def stop():
+            started.set()
+            await release.wait()
+            await original()
+
+        with patch.object(self.co, "_stop_transport", side_effect=stop):
+            task = asyncio.create_task(self.co._require_reauth())
+            await started.wait()
+            self.co._stopping = True
+            release.set()
+            await task
+        self.assertFalse(self.reauth)
+        self.assertIsNone(self.co.client)
+
+    async def test_one_denied_family_cannot_silently_remove_existing_devices(self):
+        snapshot = {did: dict(device) for did, device in self.co.devices.items()}
+        profile = {
+            "mqtt": {"host": "broker", "port": 8883, "root": "root", "cert": "cert"}
+        }
+        self.co.api = SimpleNamespace(
+            async_profile=AsyncMock(return_value=profile),
+            async_devices=AsyncMock(
+                side_effect=client.LeproResponseError("permission fixture")
+            ),
+            async_login=AsyncMock(),
+        )
+        with self.assertRaises(client.LeproResponseError):
+            await self.co._refresh_session()
+        self.assertEqual(self.co.devices, snapshot)
+        self.co.api.async_login.assert_not_called()
+        self.assertFalse(self.broker.messages)
+
+    async def test_home_assistant_brands_api_serves_the_packaged_icon_without_cdn(self):
+        from homeassistant.components.brands import BrandsIntegrationView
+        from homeassistant.components.http import KEY_AUTHENTICATED
+
+        loader.async_setup(self.hass)
+        view = BrandsIntegrationView(self.hass)
+
+        class Request(dict):
+            def __init__(self, *args):
+                super().__init__(*args)
+                self.query = {}
+                self.headers = {}
+
+        request = Request({KEY_AUTHENTICATED: True})
+        self.hass.data["brands"] = []
+        with patch.object(
+            view,
+            "_fetch_and_cache",
+            new_callable=AsyncMock,
+            side_effect=AssertionError("Packaged icon must not use the CDN"),
+        ):
+            response = await view.get(request, "lepro_cloud", "icon.png")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.content_type, "image/png")
+        self.assertEqual(
+            response.body,
+            (Path(client.__file__).parent / "brand/icon.png").read_bytes(),
+        )
+
+    async def test_remote_effect_override_does_not_fall_back_to_old_bulb_presets(self):
+        self.co.effect_types = {"B1": ""}
+        entity = light.LeproCloudLight(
+            self.co, "lamp", {"type": 1, "series": "B1", "scenes": []}
+        )
+        self.assertIsNone(entity.effect_list)
+
+    async def test_http_401_is_auth_failure_even_with_non_json_body(self):
+        for body in ({}, ValueError("not JSON")):
+            api = client.LeproApi.__new__(client.LeproApi)
+            api._host = "invalid"
+            api.token = None
+            parser = (
+                AsyncMock(side_effect=body)
+                if isinstance(body, Exception)
+                else AsyncMock(return_value=body)
+            )
+            api._session = SimpleNamespace(
+                request=AsyncMock(return_value=SimpleNamespace(status=401, json=parser))
+            )
+            with self.assertRaises(client.LeproAuthError):
+                await api._request("GET", "/user/profile")
+
+    async def test_brightness_mode_is_not_inferred_from_ha_display_color_mode(self):
+        for picker in ("rgb", "diy2", "rgbcw"):
+            entity = light.LeproCloudLight(
+                self.co, "lamp", {"type": 1, "series": "STV1", "_color_picker": picker}
+            )
+            entity.hass = self.hass
+            for mode, dp in ((0, "d3"), (1, "d5"), (2, "d52"), (3, "d52"), (5, "d52")):
+                self.co.states["lamp"] = {
+                    "d1": 1,
+                    "d2": mode,
+                    "d3": 500,
+                    "d4": 500,
+                    "d5": "007803E801F4",
+                    "d52": 500,
+                }
+                await entity.async_turn_on(brightness=128)
+                values = self.broker.messages[-1][1]["d"]
+                with self.subTest(picker=picker, mode=mode):
+                    self.assertEqual(values["d2"], mode)
+                    self.assertIn(dp, values)
 
     async def test_apk_negative_auth_codes_and_non_auth_failures(self):
         for code in (-202, -203, -204, -205, -900, -904, -905, -100):
@@ -776,6 +1121,7 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
             async_devices=AsyncMock(return_value=list(self.co.devices.values())),
             secret="fixture",
         )
+        self.co._load_product_configs = AsyncMock(return_value=False)
         self.co._load_device_scenes = AsyncMock()
         self.co._resolve_certs = AsyncMock(
             return_value={"root": "new", "cert": "new", "key": "key"}
@@ -889,7 +1235,7 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(value, text)
         self.assertEqual(result["devices"][0]["datapoints"], ["d1"])
 
-    async def test_real_platform_setup_unload_reload_and_registry_cleanup(self):
+    async def _prepare_platforms(self):
         hass = self.hass
         loader.async_setup(hass)
         hass.config.components.add("persistent_notification")
@@ -901,6 +1247,10 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
         await area_registry.async_load(hass)
         await entity_registry.async_load(hass)
         await async_setup_component(hass, "homeassistant", {})
+        return hass
+
+    async def test_real_platform_setup_unload_reload_and_registry_cleanup(self):
+        hass = await self._prepare_platforms()
         kwargs = {
             "domain": "lepro_cloud",
             "title": "Audit",
@@ -945,12 +1295,37 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
                 ),
                 11,
             )
+            device_reg = device_registry.async_get(hass)
+            getter = getattr(device_reg, "async_get_device_by_identifier", None)
+            if getter is None:
+                lamp = device_reg.async_get_device(identifiers={("lepro_cloud", "tb1")})
+            else:
+                args = (
+                    {"config_entry_id": entry.entry_id}
+                    if "config_entry_id" in inspect.signature(getter).parameters
+                    else {}
+                )
+                lamp = getter(("lepro_cloud", "tb1"), **args)
+            device_reg.async_update_device(lamp.id, name_by_user="User's room")
             self.assertTrue(await hass.config_entries.async_unload(entry.entry_id))
             self.assertEqual(len(co.listeners), 0)
             devices.pop("p1")
+            devices["tb1"]["name"] = "Renamed_ABCD"
             self.assertTrue(await hass.config_entries.async_setup(entry.entry_id))
             await hass.async_block_till_done()
             self.assertEqual(len(entry.runtime_data.listeners), 6)
+            getter = getattr(device_reg, "async_get_device_by_identifier", None)
+            if getter is None:
+                lamp = device_reg.async_get_device(identifiers={("lepro_cloud", "tb1")})
+            else:
+                args = (
+                    {"config_entry_id": entry.entry_id}
+                    if "config_entry_id" in inspect.signature(getter).parameters
+                    else {}
+                )
+                lamp = getter(("lepro_cloud", "tb1"), **args)
+            self.assertEqual(lamp.name, "Renamed_ABCD")
+            self.assertEqual(lamp.name_by_user, "User's room")
             self.assertEqual(
                 len(
                     entity_registry.async_entries_for_config_entry(
