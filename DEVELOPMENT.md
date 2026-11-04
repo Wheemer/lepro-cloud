@@ -1,7 +1,7 @@
 # Development
 
 This Home Assistant custom integration keeps
-`custom_components/lepro_cloud` as the standard integration module and avoid
+`custom_components/lepro_cloud` as the standard integration module and avoids
 moving runtime code into a package layout that Home Assistant or HACS would not
 install directly.
 
@@ -22,20 +22,32 @@ device.
 
 - `custom_components/lepro_cloud/`: Home Assistant integration source.
 - `tests/`: protocol, config-flow, MQTT TLS, and platform behavior tests.
-- `assets/`: private repository artwork used by the README.
-- `hacs.json`: HACS custom repository metadata for integration validation.
+- `assets/`: repository artwork used by the README.
+- `hacs.json`: HACS integration metadata for integration validation.
 - `.github/workflows/`: pinned CI, HACS, CodeQL, Scorecard, and manual release
   verification workflows.
 
 ## Private Material
 
-Never commit or package MQTT keys, APKs, credentials, Home Assistant runtime
-configuration, or deployment-specific secrets. The ignored private key lookup
-locations are documented in the README for private local use only.
+Never commit personal credentials, account certificates, runtime configuration,
+or deployment-specific secrets. The app-bundled MQTT client key in
+`custom_components/lepro_cloud/_private/mqtt_client_key.pem` is deliberately
+included in releases; users do not supply a personal key.
 
-Lepro trademarks, names, logos, icons, product artwork, and any other
-Lepro-owned assets remain the property of their respective owners and are
-included only in this private repository.
+Lepro trademarks and artwork remain the property of their respective owners.
+
+## Isolated Home Assistant regression tests
+
+`tests/real_ha_regressions.py` exercises actual Home Assistant classes separately
+from the lightweight unit-test import stubs. Build `tests/Dockerfile.ha` for the
+minimum and current tested HA versions, then run the container with
+`--network none`, the checkout mounted read-only at `/source`, and a dedicated
+permanent test directory mounted at `/audit`. Never mount a live HA config.
+
+```bash
+docker build -f tests/Dockerfile.ha --build-arg HA_VERSION=2026.4.0 -t lepro-test:2026.4.0 .
+docker run --rm --network none -v "$PWD:/source:ro" -v /path/to/test-data:/audit lepro-test:2026.4.0 /source/tests/real_ha_regressions.py
+```
 
 ## Release Verification
 

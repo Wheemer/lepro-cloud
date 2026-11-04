@@ -54,16 +54,21 @@ def _load_config_flow_module() -> Any:
         def async_create_entry(self, **kwargs: Any) -> dict[str, Any]:
             return {"type": "create_entry", **kwargs}
 
-        def async_update_reload_and_abort(self, entry: Any, **kwargs: Any) -> dict[str, Any]:
+        def async_update_reload_and_abort(
+            self, entry: Any, **kwargs: Any
+        ) -> dict[str, Any]:
             data_updates = kwargs.get("data_updates", {})
             self.hass.config_entries.async_update_entry(
                 entry,
-                data={**entry.data, **data_updates},
+                data=kwargs.get("data", {**entry.data, **data_updates}),
                 title=kwargs.get("title", entry.title),
                 unique_id=kwargs.get("unique_id", entry.unique_id),
             )
             self.hass.config_entries.async_schedule_reload(entry.entry_id)
-            return {"type": "abort", "reason": kwargs.get("reason", "reconfigure_successful")}
+            return {
+                "type": "abort",
+                "reason": kwargs.get("reason", "reconfigure_successful"),
+            }
 
     config_entries = types.ModuleType("homeassistant.config_entries")
     config_entries.ConfigFlow = ConfigFlow
@@ -77,6 +82,7 @@ def _load_config_flow_module() -> Any:
     selector.SelectSelector = lambda config: {"selector": "select", **config}
 
     voluptuous = types.ModuleType("voluptuous")
+
     class RequiredMarker:
         def __init__(self, key: str, default: Any = None) -> None:
             self.key = key
@@ -112,7 +118,9 @@ def _load_config_flow_module() -> Any:
     sys.modules["homeassistant.config_entries"] = config_entries
     sys.modules["homeassistant.const"] = homeassistant_const
     sys.modules["homeassistant.core"] = homeassistant_core
-    sys.modules.setdefault("homeassistant.helpers", types.ModuleType("homeassistant.helpers"))
+    sys.modules.setdefault(
+        "homeassistant.helpers", types.ModuleType("homeassistant.helpers")
+    )
     sys.modules["homeassistant.helpers.aiohttp_client"] = aiohttp_client
     sys.modules["homeassistant.helpers.selector"] = selector
     sys.modules["voluptuous"] = voluptuous
@@ -121,7 +129,9 @@ def _load_config_flow_module() -> Any:
     sys.modules["paho.mqtt.client"] = paho_mqtt_client
 
     package = types.ModuleType("custom_components.lepro_cloud")
-    package.__path__ = [str(Path(__file__).resolve().parents[1] / "custom_components" / "lepro_cloud")]
+    package.__path__ = [
+        str(Path(__file__).resolve().parents[1] / "custom_components" / "lepro_cloud")
+    ]
     sys.modules.setdefault("custom_components", types.ModuleType("custom_components"))
     sys.modules["custom_components.lepro_cloud"] = package
 
@@ -139,7 +149,9 @@ def _load_config_flow_module() -> Any:
 def test_flow_error_distinguishes_response_failures() -> None:
     module = _load_config_flow_module()
 
-    assert module._flow_error(module.LeproAuthError("bad credentials")) == "invalid_auth"
+    assert (
+        module._flow_error(module.LeproAuthError("bad credentials")) == "invalid_auth"
+    )
     assert (
         module._flow_error(module.LeproResponseError("Timestamp requires 10 digits"))
         == "invalid_response"
@@ -156,16 +168,20 @@ def test_invalid_credentials_return_form_error(monkeypatch: Any) -> None:
         raise module.LeproAuthError("Invalid credentials")
 
     monkeypatch.setattr(module, "_async_account_region", invalid)
-    result = asyncio.run(flow.async_step_user(
-        {"username": "audit@example.invalid", "password": "invalid"}
-    ))
+    result = asyncio.run(
+        flow.async_step_user(
+            {"username": "audit@example.invalid", "password": "invalid"}
+        )
+    )
     assert result["errors"] == {"base": "invalid_auth"}
 
 
 def test_log_api_error_includes_type_and_safe_message(caplog: Any) -> None:
     module = _load_config_flow_module()
 
-    caplog.set_level(logging.WARNING, logger="custom_components.lepro_cloud.config_flow")
+    caplog.set_level(
+        logging.WARNING, logger="custom_components.lepro_cloud.config_flow"
+    )
     module._log_api_error(module.LeproResponseError("Timestamp requires 10 digits"))
 
     assert "LeproResponseError" in caplog.text
@@ -179,7 +195,9 @@ def test_log_api_error_includes_type_and_safe_message(caplog: Any) -> None:
 def test_login_input_matches_app_whitespace_trimming() -> None:
     """The Android login activity trims both credentials before submission."""
     assert "password = user_input[CONF_PASSWORD].strip()" in (
-        Path(__file__).resolve().parents[1]
+        Path(__file__)
+        .resolve()
+        .parents[1]
         .joinpath("custom_components", "lepro_cloud", "config_flow.py")
         .read_text(encoding="utf-8")
     )

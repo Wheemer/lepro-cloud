@@ -30,7 +30,8 @@
       "already_configured": "This Lepro Cloud account is already configured.",
       "cannot_connect": "Could not connect to Lepro Cloud.",
       "invalid_auth": "Invalid Lepro Cloud credentials.",
-      "invalid_response": "Lepro Cloud rejected the login request."
+      "invalid_response": "Lepro Cloud rejected the login request.",
+      "wrong_account": "Use the same Lepro email address to reauthenticate this account."
     },
     "abort": {
       "already_configured": "This Lepro Cloud account is already configured.",

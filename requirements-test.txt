@@ -1,0 +1,4 @@
+pytest
+paho-mqtt==2.1.0
+ruff
+aiohttp

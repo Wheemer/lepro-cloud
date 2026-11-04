@@ -66,6 +66,7 @@ def _load_integration_module() -> Any:
     client.LeproCoordinator = LeproCoordinator
     client.LeproMqttError = LeproMqttError
     client.take_authenticated_api = lambda _hass, _account_id: None
+    client.cache_authenticated_api = lambda *_args, **_kwargs: None
 
     integration_const = types.ModuleType("custom_components.lepro_cloud.const")
     integration_const.PLATFORMS = []
@@ -80,7 +81,9 @@ def _load_integration_module() -> Any:
     sys.modules["custom_components.lepro_cloud.client"] = client
     sys.modules["custom_components.lepro_cloud.const"] = integration_const
 
-    spec = spec_from_file_location("custom_components.lepro_cloud", PACKAGE_PATH / "__init__.py")
+    spec = spec_from_file_location(
+        "custom_components.lepro_cloud", PACKAGE_PATH / "__init__.py"
+    )
     assert spec and spec.loader
     module = module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -100,7 +103,9 @@ class FakeBus:
 
 
 class FakeConfigEntries:
-    async def async_forward_entry_setups(self, _entry: Any, _platforms: list[Any]) -> None:
+    async def async_forward_entry_setups(
+        self, _entry: Any, _platforms: list[Any]
+    ) -> None:
         return None
 
     async def async_unload_platforms(self, _entry: Any, _platforms: list[Any]) -> bool:

@@ -139,7 +139,9 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
                         entry,
                         unique_id=unique_id,
                         title=f"Lepro Cloud ({username})",
-                        data_updates={
+                        reason="reconfigure_successful",
+                        data={
+                            **entry.data,
                             CONF_USERNAME: username,
                             CONF_PASSWORD: password,
                             CONF_REGION: region,
@@ -152,9 +154,7 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_reauth(
-        self, entry_data: Mapping[str, Any]
-    ) -> dict[str, Any]:
+    async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> dict[str, Any]:
         """Handle a request to reauthenticate an existing entry."""
         del entry_data
         return await self.async_step_reauth_confirm()
@@ -169,6 +169,12 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             username = user_input[CONF_USERNAME].strip()
             password = user_input[CONF_PASSWORD].strip()
+            if username.casefold() != entry.data[CONF_USERNAME].strip().casefold():
+                return self.async_show_form(
+                    step_id="reauth_confirm",
+                    data_schema=_credentials_schema(username=entry.data[CONF_USERNAME]),
+                    errors={"base": "wrong_account"},
+                )
             try:
                 region = await _async_account_region(self.hass, username)
                 api = LeproApi(self.hass, region)
@@ -190,7 +196,8 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
                         entry,
                         unique_id=unique_id,
                         title=f"Lepro Cloud ({username})",
-                        data_updates={
+                        data={
+                            **entry.data,
                             CONF_USERNAME: username,
                             CONF_PASSWORD: password,
                             CONF_REGION: region,

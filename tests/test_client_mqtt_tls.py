@@ -37,7 +37,9 @@ def _install_client_import_stubs() -> None:
     sys.modules.setdefault("homeassistant", homeassistant)
     sys.modules["homeassistant.core"] = homeassistant_core
     sys.modules["homeassistant.const"] = homeassistant_const
-    sys.modules.setdefault("homeassistant.helpers", types.ModuleType("homeassistant.helpers"))
+    sys.modules.setdefault(
+        "homeassistant.helpers", types.ModuleType("homeassistant.helpers")
+    )
     sys.modules["homeassistant.helpers.aiohttp_client"] = aiohttp_client
     sys.modules.setdefault("paho", paho)
     sys.modules["paho.mqtt"] = paho_mqtt
@@ -77,7 +79,9 @@ class RecordingMqttClient:
 def _load_client_module() -> Any:
     _install_client_import_stubs()
     package = types.ModuleType("custom_components.lepro_cloud")
-    package.__path__ = [str(Path(__file__).resolve().parents[1] / "custom_components" / "lepro_cloud")]
+    package.__path__ = [
+        str(Path(__file__).resolve().parents[1] / "custom_components" / "lepro_cloud")
+    ]
     sys.modules.setdefault("custom_components", types.ModuleType("custom_components"))
     sys.modules["custom_components.lepro_cloud"] = package
     client_path = Path(package.__path__[0]) / "client.py"
@@ -118,12 +122,19 @@ def test_mqtt_start_uses_app_client_id_and_does_not_block_on_connection() -> Non
     )
     coordinator.tmp.cleanup()
 
+
 def test_mqtt_connect_uses_the_app_qos_zero_startup_request() -> None:
     client_module = _load_client_module()
     mqtt_client = RecordingMqttClient()
     coordinator = client_module.LeproCoordinator.__new__(client_module.LeproCoordinator)
     coordinator.devices = {"light-1": {"did": "light-1", "series": "S1-10"}}
     coordinator.connected = False
+    coordinator._stopping = False
+    coordinator.states = {}
+    coordinator.listeners = set()
+    coordinator.hass = types.SimpleNamespace(
+        loop=types.SimpleNamespace(call_soon_threadsafe=lambda fn, *args: fn(*args))
+    )
     coordinator._schedule_device_updates = lambda: None
 
     coordinator._on_connect(mqtt_client, None, None, 0, None)
@@ -163,14 +174,18 @@ def test_mqtt_connect_queries_scene_datapoints_for_unlisted_rgbic_series() -> No
         }
     }
     coordinator.connected = False
+    coordinator._stopping = False
+    coordinator.states = {}
+    coordinator.listeners = set()
+    coordinator.hass = types.SimpleNamespace(
+        loop=types.SimpleNamespace(call_soon_threadsafe=lambda fn, *args: fn(*args))
+    )
     coordinator._schedule_device_updates = lambda: None
 
     coordinator._on_connect(mqtt_client, None, None, 0, None)
 
     request = json.loads(mqtt_client.publishes[0][1])
-    assert request["d"] == [
-        "online", "d1", "d2", "d3", "d4", "d5", "d50", "d52"
-    ]
+    assert request["d"] == ["online", "d1", "d2", "d3", "d4", "d5", "d50", "d52"]
 
 
 def test_full_status_reply_marks_device_online_when_online_is_omitted() -> None:
@@ -201,8 +216,9 @@ def test_unknown_device_and_topic_are_ignored() -> None:
     coordinator = module.LeproCoordinator.__new__(module.LeproCoordinator)
     coordinator.devices = {"known": {}}
     coordinator.states = {}
+    coordinator._stopping = False
     for topic in ("le/unknown/prp/rpt", "le/known/prp/bogus"):
-        coordinator._on_message(None, None, types.SimpleNamespace(
-            topic=topic, payload=b'{"d":{"d1":1}}'
-        ))
+        coordinator._on_message(
+            None, None, types.SimpleNamespace(topic=topic, payload=b'{"d":{"d1":1}}')
+        )
     assert coordinator.states == {}

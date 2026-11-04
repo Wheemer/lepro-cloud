@@ -29,7 +29,11 @@ def device_type(device: dict[str, Any]) -> int | None:
 
 def device_name(device: dict[str, Any], fallback: str = "Lepro Device") -> str:
     """Return the best display name from a discovery payload."""
-    for key in ("name", "deviceName", "devName", "nickname", "mac"):
+    for key in ("friendlyName", "nickname", "deviceName", "devName"):
+        value = device.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    for key in ("name", "mac"):
         value = device.get(key)
         if value:
             name = str(value).strip()
@@ -40,12 +44,18 @@ def device_name(device: dict[str, Any], fallback: str = "Lepro Device") -> str:
 
 def is_light(device: dict[str, Any]) -> bool:
     """Return true when discovery identifies a Wi-Fi light."""
-    return device_type(device) == DEVICE_TYPE_LIGHT
+    return device_type(device) == DEVICE_TYPE_LIGHT and has_cloud_control(device)
 
 
 def is_plug(device: dict[str, Any]) -> bool:
     """Return true when discovery identifies a Wi-Fi plug."""
-    return device_type(device) == DEVICE_TYPE_PLUG
+    return device_type(device) == DEVICE_TYPE_PLUG and has_cloud_control(device)
+
+
+def has_cloud_control(device: dict[str, Any]) -> bool:
+    """Missing legacy metadata is tolerated; explicit BLE-only is not."""
+    control = device.get("control")
+    return control is None or str(control) in {"2", "3"}
 
 
 def is_supported_device(device: dict[str, Any]) -> bool:

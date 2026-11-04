@@ -386,6 +386,9 @@ def test_coordinator_reuses_authenticated_api_without_second_login() -> None:
             return []
 
     class Hass:
+        def async_create_background_task(self, coroutine: Any, _name: str) -> Any:
+            return asyncio.create_task(coroutine)
+
         async def async_add_executor_job(self, target: Any, *args: Any) -> Any:
             return target(*args)
 

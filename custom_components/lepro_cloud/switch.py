@@ -13,7 +13,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .client import LeproCoordinator
 from .const import DOMAIN
 from .device import device_info, is_plug
-from .protocol import DP_ONLINE, on_payload, state_is_on
+from .protocol import on_payload, state_is_on
 
 
 async def async_setup_entry(
@@ -85,15 +85,7 @@ class LeproCloudPlugSwitch(SwitchEntity):
     @property
     def available(self) -> bool:
         """Return if the plug is available."""
-        if not self.coordinator.connected:
-            return False
-        state = self.coordinator.states.get(self.device_id, {})
-        if DP_ONLINE in state:
-            try:
-                return int(state[DP_ONLINE]) > 0
-            except (TypeError, ValueError):
-                return False
-        return self.coordinator.connected
+        return self.coordinator.device_available(self.device_id)
 
     @property
     def is_on(self) -> bool | None:
@@ -106,8 +98,6 @@ class LeproCloudPlugSwitch(SwitchEntity):
         await self.hass.async_add_executor_job(
             self.coordinator.command, self.device_id, values
         )
-        self.coordinator.states.setdefault(self.device_id, {}).update(values)
-        self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the plug off."""
@@ -115,8 +105,6 @@ class LeproCloudPlugSwitch(SwitchEntity):
         await self.hass.async_add_executor_job(
             self.coordinator.command, self.device_id, values
         )
-        self.coordinator.states.setdefault(self.device_id, {}).update(values)
-        self.async_write_ha_state()
 
 
 def _is_supported_switch(device: dict[str, Any]) -> bool:
@@ -161,8 +149,6 @@ class LeproCloudPlugLockSwitch(LeproCloudPlugSwitch):
         await self.hass.async_add_executor_job(
             self.coordinator.command, self.device_id, values
         )
-        self.coordinator.states.setdefault(self.device_id, {}).update(values)
-        self.async_write_ha_state()
 
 
 class LeproCloudPlugPowerMemorySwitch(LeproCloudPlugLockSwitch):
@@ -184,17 +170,15 @@ class LeproCloudPlugPowerMemorySwitch(LeproCloudPlugLockSwitch):
         if "d100" not in state:
             return None
         try:
-            return int(state["d100"]) > 0
+            return int(state["d100"]) == 2
         except (TypeError, ValueError):
             return None
 
     async def _async_set_lock(self, enabled: bool) -> None:
-        values = {"d100": 1 if enabled else 0}
+        values = {"d100": 2 if enabled else 0}
         await self.hass.async_add_executor_job(
             self.coordinator.command, self.device_id, values
         )
-        self.coordinator.states.setdefault(self.device_id, {}).update(values)
-        self.async_write_ha_state()
 
 
 class LeproCloudPlugIndicatorLightSwitch(LeproCloudPlugPowerMemorySwitch):
@@ -224,8 +208,6 @@ class LeproCloudPlugIndicatorLightSwitch(LeproCloudPlugPowerMemorySwitch):
         await self.hass.async_add_executor_job(
             self.coordinator.command, self.device_id, values
         )
-        self.coordinator.states.setdefault(self.device_id, {}).update(values)
-        self.async_write_ha_state()
 
 
 def _has_lock_switch(device: dict[str, Any]) -> bool:
@@ -271,15 +253,7 @@ class LeproCloudStvSettingSwitch(SwitchEntity):
     @property
     def available(self) -> bool:
         """Return whether the TV strip is available."""
-        if not self.coordinator.connected:
-            return False
-        state = self.coordinator.states.get(self.device_id, {})
-        if DP_ONLINE in state:
-            try:
-                return int(state[DP_ONLINE]) > 0
-            except (TypeError, ValueError):
-                return False
-        return self.coordinator.connected
+        return self.coordinator.device_available(self.device_id)
 
     @property
     def is_on(self) -> bool | None:
@@ -305,8 +279,6 @@ class LeproCloudStvSettingSwitch(SwitchEntity):
         await self.hass.async_add_executor_job(
             self.coordinator.command, self.device_id, values
         )
-        self.coordinator.states.setdefault(self.device_id, {}).update(values)
-        self.async_write_ha_state()
 
 
 def _is_stv(device: dict[str, Any]) -> bool:
