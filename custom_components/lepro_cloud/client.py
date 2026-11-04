@@ -14,6 +14,7 @@ from collections.abc import Callable, Mapping
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin, urlsplit
 
 import paho.mqtt.client as mqtt
 from aiohttp import ClientError
@@ -290,14 +291,36 @@ class LeproApi:
         return [item for item in payload if isinstance(item, dict)]
 
     async def async_text(self, url: str) -> str:
-        """Download text content from a profile-provided URL."""
+        """Download certificates, authenticating only the active HTTPS API origin."""
         try:
             async with asyncio.timeout(REQUEST_TIMEOUT):
-                response = await self._session.get(url, headers={})
-                content = await response.text()
-                if response.status >= 400:
-                    raise LeproApiError("Lepro certificate download failed")
-                return content
+                for _ in range(6):
+                    parsed = urlsplit(url)
+                    trusted = (
+                        parsed.scheme == "https"
+                        and parsed.hostname == self._host
+                        and parsed.port in (None, 443)
+                        and parsed.username is None
+                        and parsed.password is None
+                    )
+                    response = await self._session.get(
+                        url,
+                        headers=self._headers() if trusted else {},
+                        allow_redirects=False,
+                    )
+                    if response.status in (301, 302, 303, 307, 308):
+                        location = response.headers.get("Location")
+                        response.release()
+                        if not location:
+                            raise LeproApiError("Lepro certificate redirect is invalid")
+                        url = urljoin(url, location)
+                        if urlsplit(url).scheme not in ("http", "https"):
+                            raise LeproApiError("Lepro certificate redirect is invalid")
+                        continue
+                    if response.status >= 400:
+                        raise LeproApiError("Lepro certificate download failed")
+                    return await response.text()
+                raise LeproApiError("Lepro certificate redirect limit exceeded")
         except (ClientError, OSError, TimeoutError, ValueError):
             raise LeproApiError("Unable to download Lepro MQTT certificate") from None
 

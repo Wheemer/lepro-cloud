@@ -74,6 +74,9 @@ class FakeResponse:
     async def text(self) -> str:
         return str(self._payload)
 
+    def release(self) -> None:
+        pass
+
 
 class RecordingSession:
     def __init__(self, responses: list[FakeResponse]) -> None:
@@ -93,10 +96,10 @@ class RecordingSession:
         return self.responses.pop(0)
 
     async def get(
-        self, url: str, headers: dict[str, str] | None = None
+        self, url: str, headers: dict[str, str] | None = None, **kwargs: Any
     ) -> FakeResponse:
         self.requests.append(
-            {"method": "GET", "url": url, "data": None, "headers": headers}
+            {"method": "GET", "url": url, "data": None, "headers": headers, **kwargs}
         )
         return self.responses.pop(0)
 
@@ -458,3 +461,61 @@ def test_stop_cleans_loop_and_certificates_after_disconnect_error() -> None:
 
 async def _dummy_certs(_info: Any, _key: str, _password: str) -> dict[str, str]:
     return {}
+
+
+def test_certificate_download_authenticates_only_the_active_api_origin():
+    client_module = _load_client_module()
+    urls = [
+        "https://api.example.invalid/client.pem",
+        "https://cert.example.invalid/client.pem",
+        "http://api.example.invalid/client.pem",
+        "https://api.example.invalid:8443/client.pem",
+        "https://api.example.invalid.attacker.invalid/client.pem",
+    ]
+    session = RecordingSession([FakeResponse("PEM") for _ in urls])
+    api = _api(client_module, session)
+    api.token = "test-token"
+    for url in urls:
+        assert asyncio.run(api.async_text(url)) == "PEM"
+    assert session.requests[0]["headers"]["Authorization"] == "Bearer test-token"
+    assert all(request["headers"] == {} for request in session.requests[1:])
+    assert all(request["allow_redirects"] is False for request in session.requests)
+
+
+def test_certificate_redirect_rechecks_origin_and_never_forwards_token():
+    client_module = _load_client_module()
+    redirect = FakeResponse("", status=302)
+    redirect.headers = {"Location": "https://cert.example.invalid/client.pem"}
+    session = RecordingSession([redirect, FakeResponse("PEM")])
+    api = _api(client_module, session)
+    api.token = "test-token"
+    assert asyncio.run(api.async_text("https://api.example.invalid/cert")) == "PEM"
+    assert session.requests[0]["headers"]["Authorization"] == "Bearer test-token"
+    assert session.requests[1]["headers"] == {}
+
+
+def test_certificate_same_origin_redirect_retains_authentication():
+    client_module = _load_client_module()
+    redirect = FakeResponse("", status=307)
+    redirect.headers = {"Location": "/client.pem"}
+    session = RecordingSession([redirect, FakeResponse("PEM")])
+    api = _api(client_module, session)
+    api.token = "test-token"
+    assert asyncio.run(api.async_text("https://api.example.invalid/cert")) == "PEM"
+    assert session.requests[1]["url"] == "https://api.example.invalid/client.pem"
+    assert session.requests[1]["headers"]["Authorization"] == "Bearer test-token"
+
+
+def test_certificate_redirect_loop_is_bounded():
+    client_module = _load_client_module()
+    redirect = FakeResponse("", status=302)
+    redirect.headers = {"Location": "/cert"}
+    session = RecordingSession([redirect] * 6)
+    api = _api(client_module, session)
+    try:
+        asyncio.run(api.async_text("https://api.example.invalid/cert"))
+    except client_module.LeproApiError as err:
+        assert str(err) == "Lepro certificate redirect limit exceeded"
+    else:
+        raise AssertionError("expected bounded redirect failure")
+    assert len(session.requests) == 6
