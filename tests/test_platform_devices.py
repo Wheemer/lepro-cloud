@@ -143,6 +143,9 @@ class FakeCoordinator:
         self.commands: list[tuple[str, dict[str, Any]]] = []
         self.listeners: list[Callable[[str], None]] = []
 
+    def device_available(self, did: str) -> bool:
+        return self.connected and self.states.get(did, {}).get("online") == 1
+
     def command(self, did: str, values: dict[str, Any]) -> None:
         self.commands.append((did, values))
 
@@ -175,11 +178,25 @@ def test_platforms_expose_only_verified_device_types() -> None:
     assert not switch._is_supported_switch({})
 
 
-def test_device_name_hides_lepro_appended_identifier() -> None:
+def test_device_name_preserves_user_text_and_only_cleans_a_proven_factory_name() -> (
+    None
+):
     device = _load_module("device")
-
-    assert device.device_name({"name": "girls room_U5O5"}) == "girls room"
-    assert device.device_name({"name": "Kitchen_TV"}) == "Kitchen_TV"
+    assert device.device_name({"name": "Kitchen_ABCD"}) == "Kitchen_ABCD"
+    assert (
+        device.device_name({"name": "girls room_U5O5", "friendlyName": "girls room"})
+        == "girls room"
+    )
+    assert (
+        device.device_name({"name": "TB1_U5O5", "series": "TB1", "deviceSn": "U5O5"})
+        == "TB1"
+    )
+    assert (
+        device.device_name(
+            {"name": "girls room_U5O5", "series": "TB1", "deviceSn": "U5O5"}
+        )
+        == "girls room_U5O5"
+    )
 
 
 def test_setup_entry_adds_lights_and_switches() -> None:
@@ -214,15 +231,16 @@ def test_plug_switch_uses_d1_state_command_and_availability() -> None:
     )
     entity.hass = FakeHass()
 
-    assert entity.available is True
+    assert entity.available is False
     assert entity.is_on is None
 
     asyncio.run(entity.async_turn_on())
 
     assert coordinator.commands == [("plug-1", {"d1": 1})]
-    assert coordinator.states["plug-1"]["d1"] == 1
+    assert coordinator.states.get("plug-1", {}).get("d1") is None
+    coordinator.states["plug-1"] = {"d1": 1, "online": 1}
     assert entity.is_on is True
-    assert entity.write_count == 1
+    assert getattr(entity, "write_count", 0) == 0
 
     coordinator.states["plug-1"]["online"] = 0
     assert entity.available is False
@@ -233,6 +251,8 @@ def test_plug_switch_uses_d1_state_command_and_availability() -> None:
     asyncio.run(entity.async_turn_off())
 
     assert coordinator.commands[-1] == ("plug-1", {"d1": 0})
+    assert entity.is_on is True  # Publish acceptance alone is not a device report.
+    coordinator.states["plug-1"]["d1"] = 0
     assert entity.is_on is False
 
 
@@ -261,10 +281,12 @@ def test_p1_plug_exposes_and_controls_its_button_lock() -> None:
 
     asyncio.run(lock.async_turn_on())
     assert coordinator.commands[-1] == ("p1-1", {"d102": 1})
+    coordinator.states.setdefault("p1-1", {}).update(coordinator.commands[-1][1])
     assert lock.is_on is True
 
     asyncio.run(lock.async_turn_off())
     assert coordinator.commands[-1] == ("p1-1", {"d102": 0})
+    coordinator.states.setdefault("p1-1", {}).update(coordinator.commands[-1][1])
     assert lock.is_on is False
 
     memory = next(
@@ -277,11 +299,13 @@ def test_p1_plug_exposes_and_controls_its_button_lock() -> None:
     assert memory.is_on is None
 
     asyncio.run(memory.async_turn_on())
-    assert coordinator.commands[-1] == ("p1-1", {"d100": 1})
+    assert coordinator.commands[-1] == ("p1-1", {"d100": 2})
+    coordinator.states.setdefault("p1-1", {}).update(coordinator.commands[-1][1])
     assert memory.is_on is True
 
     asyncio.run(memory.async_turn_off())
     assert coordinator.commands[-1] == ("p1-1", {"d100": 0})
+    coordinator.states.setdefault("p1-1", {}).update(coordinator.commands[-1][1])
     assert memory.is_on is False
 
     indicator = next(
@@ -290,12 +314,15 @@ def test_p1_plug_exposes_and_controls_its_button_lock() -> None:
         if entity.device_id == "p1-1" and entity._attr_name == "Indicator Light"
     )
     indicator.hass = FakeHass()
+    assert len({entity._attr_unique_id for entity in entities}) == len(entities)
     assert indicator.is_on is None
     asyncio.run(indicator.async_turn_on())
     assert coordinator.commands[-1] == ("p1-1", {"d101": "100000000"})
+    coordinator.states.setdefault("p1-1", {}).update(coordinator.commands[-1][1])
     assert indicator.is_on is True
     asyncio.run(indicator.async_turn_off())
     assert coordinator.commands[-1] == ("p1-1", {"d101": "000000000"})
+    coordinator.states.setdefault("p1-1", {}).update(coordinator.commands[-1][1])
     assert indicator.is_on is False
 
 
@@ -369,6 +396,7 @@ def test_light_turn_on_honors_brightness_color_temp_and_hs_color() -> None:
         {"d1": 1, "d2": 0, "d3": 502, "d4": 500},
     )
 
+    coordinator.states["light-1"].update(coordinator.commands[-1][1])
     asyncio.run(entity.async_turn_on(color_temp_kelvin=2700))
     assert coordinator.commands[-1] == (
         "light-1",
@@ -411,6 +439,7 @@ def test_tb1_uses_app_supplied_multipart_scenes() -> None:
                     "earthlight": {
                         "dp": "d50",
                         "res": "N01:P10001FF9700F2100010054R6U200020054V2000640000E1;",
+                        "scene": "brightness=500",
                     },
                 }
             ],
@@ -430,10 +459,13 @@ def test_tb1_uses_app_supplied_multipart_scenes() -> None:
             "d1": 1,
             "d2": 2,
             "d50": "N01:P10001FF9700F2100010054R6U200020054V2000640000E1;",
-            "d52": 502,
+            "d52": 500,
         },
     )
+    coordinator.states["light-1"].update(coordinator.commands[-1][1])
     assert entity.effect == "Aurora"
+    coordinator.states["light-1"]["d2"] = 0
+    assert entity.effect is None
 
 
 def test_striplight_uses_neonlight_scene_fallback() -> None:
@@ -502,7 +534,10 @@ def test_light_preserves_non_d50_scene_payloads() -> None:
             "scenes": [
                 {
                     "name": "Breath",
-                    "smartbulb": {"dp": "d6", "res": "0001"},
+                    "smartbulb": {
+                        "dp": "d6",
+                        "res": "000032006401007803E803E800000000",
+                    },
                 }
             ],
         }
@@ -511,83 +546,60 @@ def test_light_preserves_non_d50_scene_payloads() -> None:
     entity = light.LeproCloudLight(coordinator, "light-1", device)
     entity.hass = FakeHass()
 
-    assert entity.effect_list == ["Breath"]
+    assert set(entity.effect_list) == {"Breath", "Gradient", "Rainbow"}
     asyncio.run(entity.async_turn_on(effect="Breath"))
-    assert coordinator.commands[-1] == ("light-1", {"d1": 1, "d2": 2, "d6": "0001"})
-
-
-def test_light_uses_root_d5_scene_payload_without_product_mapping() -> None:
-    light = _load_module("light")
-    coordinator = FakeCoordinator()
-    device = coordinator.devices["light-1"]
-    device.update(
-        {
-            "series": "B1",
-            "scenes": [
-                {
-                    "name": "Gradient",
-                    "d5": {"dp": "d5", "res": "007801F403E8"},
-                }
-            ],
-        }
-    )
-    entity = light.LeproCloudLight(coordinator, "light-1", device)
-    entity.hass = FakeHass()
-
-    assert entity.effect_list == ["Gradient"]
-    asyncio.run(entity.async_turn_on(effect="Gradient", brightness=128))
     assert coordinator.commands[-1] == (
         "light-1",
-        {"d1": 1, "d2": 2, "d5": "007801F401F6"},
+        {"d1": 1, "d2": 2, "d6": "000032006401007803E803E800000000"},
     )
 
 
-def test_light_updates_brightness_for_hsv_scene_payloads() -> None:
+def test_unknown_family_uses_root_d5_container_with_a_valid_d6_payload() -> None:
     light = _load_module("light")
     coordinator = FakeCoordinator()
-    device = coordinator.devices["light-1"]
-    device.update(
-        {
-            "series": "B1",
-            "scenes": [
-                {
-                    "name": "Gradient",
-                    "smartbulb": {"dp": "d5", "res": "007801F403E8"},
-                }
-            ],
-        }
-    )
-    coordinator.effect_types = {"B1": "smartbulb"}
+    value = "000032006401007803E803E800000000"
+    device = {
+        "type": 1,
+        "series": "future-product",
+        "scenes": [{"name": "Saved", "d5": {"dp": "d6", "res": value}}],
+    }
     entity = light.LeproCloudLight(coordinator, "light-1", device)
     entity.hass = FakeHass()
-
-    asyncio.run(entity.async_turn_on(effect="Gradient", brightness=128))
+    asyncio.run(entity.async_turn_on(effect="Saved", brightness=128))
     assert coordinator.commands[-1] == (
         "light-1",
-        {"d1": 1, "d2": 2, "d5": "007801F401F6"},
+        {"d1": 1, "d2": 2, "d6": "000032006401007803E801F600000000"},
     )
-    assert entity.effect == "Gradient"
+    assert "light-1" not in coordinator.states
 
 
-def test_light_uses_any_verified_scene_payload_when_mapping_is_unavailable() -> None:
+def test_family_payload_selection_never_chooses_an_arbitrary_nested_effect() -> None:
     light = _load_module("light")
     coordinator = FakeCoordinator()
-    device = coordinator.devices["light-1"]
-    device.update(
-        {
-            "series": "OE1",
-            "scenes": [
-                {
-                    "name": "Saved",
-                    "floorlight": {"dp": "d50", "res": "N01:P10001FF9700E1;"},
-                }
-            ],
-        }
-    )
+    device = {
+        "type": 1,
+        "series": "unknown",
+        "scenes": [
+            {"name": "Wrong family", "floorlight": {"dp": "d50", "res": "pattern"}}
+        ],
+    }
     entity = light.LeproCloudLight(coordinator, "light-1", device)
+    assert entity.effect_list is None
 
-    assert entity.effect_list == ["Saved"]
-    assert entity._brightness_datapoint == "d52"
+
+def test_invalid_hsv_scene_is_not_mistaken_for_an_apk_d6_preset() -> None:
+    light = _load_module("light")
+    coordinator = FakeCoordinator()
+    device = {
+        "type": 1,
+        "series": "B1",
+        "scenes": [
+            {"name": "Invalid", "smartbulb": {"dp": "d5", "res": "007801F403E8"}}
+        ],
+    }
+    entity = light.LeproCloudLight(coordinator, "light-1", device)
+    assert "Invalid" not in entity.effect_list
+    assert set(entity.effect_list) == {"Gradient", "Rainbow"}
 
 
 def test_mqtt_entities_disable_home_assistant_polling() -> None:

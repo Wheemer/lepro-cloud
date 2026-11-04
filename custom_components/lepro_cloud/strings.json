@@ -5,7 +5,7 @@
         "title": "Lepro Cloud",
         "description": "Sign in with your Lepro Home account. Lepro selects the account's regional server automatically.",
         "data": {
-          "username": "Email or phone",
+          "username": "Email address",
           "password": "Password"
         }
       },
@@ -13,15 +13,15 @@
         "title": "Update Lepro Cloud",
         "description": "Update your Lepro Home account credentials. Lepro selects the account's regional server automatically.",
         "data": {
-          "username": "Email or phone",
+          "username": "Email address",
           "password": "Password"
         }
       },
       "reauth_confirm": {
         "title": "Reconnect Lepro Cloud",
-        "description": "Update your Lepro Home account credentials. Lepro selects the the appropriate regional server automatically.",
+        "description": "Update your Lepro Home account credentials. Lepro selects the appropriate regional server automatically.",
         "data": {
-          "username": "Email or phone",
+          "username": "Email address",
           "password": "Password"
         }
       }
@@ -30,7 +30,8 @@
       "already_configured": "This Lepro Cloud account is already configured.",
       "cannot_connect": "Could not connect to Lepro Cloud.",
       "invalid_auth": "Invalid Lepro Cloud credentials.",
-      "invalid_response": "Lepro Cloud rejected the login request."
+      "invalid_response": "Lepro Cloud rejected the login request.",
+      "wrong_account": "Use the same Lepro email address to reauthenticate this account."
     },
     "abort": {
       "already_configured": "This Lepro Cloud account is already configured.",

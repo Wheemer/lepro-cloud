@@ -1,4 +1,4 @@
-"""Tests for clean-room Lepro protocol helpers."""
+"""Tests for APK-derived Lepro protocol helpers."""
 
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
@@ -63,28 +63,66 @@ def test_wire_payloads_use_the_app_numeric_message_id() -> None:
 
 
 def test_state_queries_match_the_apk_product_families() -> None:
-    assert state_datapoints_for_series("B3") == (
-        "online", "d1", "d2", "d3", "d4", "d5"
-    )
+    assert state_datapoints_for_series("B3") == ("online", "d1", "d2", "d3", "d4", "d5")
     assert state_datapoints_for_series("S1-10") == (
-        "online", "d1", "d2", "d3", "d4", "d5", "d50", "d52"
+        "online",
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+        "d5",
+        "d50",
+        "d52",
     )
     assert state_datapoints_for_series("TB1-PRO") == (
-        "online", "d1", "d2", "d3", "d4", "d5", "d50", "d52"
+        "online",
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+        "d5",
+        "d50",
+        "d52",
     )
     assert state_datapoints_for_series("E1-60") == (
-        "online", "d1", "d2", "d3", "d4", "d5", "d50", "d52", "d53"
+        "online",
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+        "d5",
+        "d50",
+        "d52",
+        "d53",
     )
     assert state_datapoints_for_series("e1-plus-60") == (
-        "online", "d1", "d2", "d3", "d4", "d5", "d50", "d52", "d53"
+        "online",
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+        "d5",
+        "d50",
+        "d52",
+        "d53",
     )
     assert state_datapoints_for_series("P1") == (
-        "online", "d1", "d100", "d101", "d102", "d4", "d5"
+        "online",
+        "d1",
+        "d100",
+        "d101",
+        "d102",
+        "d4",
+        "d5",
     )
     assert state_datapoints_for_series("future-product") == (
-        "online", "d1", "d2", "d3", "d4", "d5"
+        "online",
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+        "d5",
     )
-
 
 
 def test_complete_standard_state_means_online_when_online_is_omitted() -> None:
@@ -108,7 +146,7 @@ def test_brightness_payload_uses_verified_datapoints() -> None:
 
 
 def test_brightness_payload_clamps() -> None:
-    assert brightness_payload(-1)[DP_BRIGHTNESS] == 1
+    assert brightness_payload(-1)[DP_BRIGHTNESS] == 10
     assert brightness_payload(999)[DP_BRIGHTNESS] == 1000
 
 
@@ -140,8 +178,8 @@ def test_temperature_scale_maps_warm_to_cool_kelvin_range() -> None:
 
 def test_hsv_hex_parsing_accepts_the_app_uppercase_wire_format() -> None:
     assert parse_lepro_hsv("000003e803e8") == (0, 1000, 1000)
-    assert parse_lepro_hsv("03e803e803e8") == (1000, 1000, 1000)
-    assert parse_lepro_hsv("03E803e803e8") == (1000, 1000, 1000)
+    assert parse_lepro_hsv("03e803e803e8") is None
+    assert parse_lepro_hsv("016803e803e8") == (360, 1000, 1000)
     assert parse_lepro_hsv("03e803e803e") is None
     assert parse_lepro_hsv("03e903e803e8") is None
 
@@ -165,3 +203,9 @@ def test_state_is_on() -> None:
     assert state_is_on({DP_ON: 0}) is False
     assert state_is_on({DP_ON: "bad"}) is None
     assert state_is_on({}) is None
+
+
+def test_d6_group_is_an_apk_string_not_a_hex_integer() -> None:
+    # Dp6Scene.fromProtocolString keeps group and mode as two word characters.
+    value = "G10032006401007803E803E800000000"
+    assert protocol.scene_brightness(value, 500) == "G10032006401007803E801F400000000"

@@ -1,0 +1,36 @@
+{
+  "provenance": {
+    "observed": "2026-11-04 authorized installation: SE1 firmware 2.1.26, control=3, name girls room_U5O5, rgb picker. Before and rollback: friendly name girls room, light on at HS [356,83], brightness 255, color_temp and hs; new build: MQTT connected, no datapoints, unavailable/unknown.",
+    "reconstructed": "The device id, d4 value, GET id and c=200 are synthetic. No raw MQTT reply was captured. c plus d exercises APK MqttConnectionPool.java:530-544 dispatch, not a claimed capture from the device."
+  },
+  "device": {
+    "did": "123456",
+    "type": 1,
+    "series": "SE1",
+    "fwVersion": "2.1.26",
+    "control": 3,
+    "name": "girls room_U5O5"
+  },
+  "product_config": {
+    "series": "SE1",
+    "effect": "smartbulb",
+    "colorPicker": "rgb"
+  },
+  "prior_name": "girls room",
+  "prior_modes": [
+    "color_temp",
+    "hs"
+  ],
+  "report": {
+    "id": 17,
+    "c": 200,
+    "d": {
+      "online": 1,
+      "d1": 1,
+      "d2": 1,
+      "d3": 1000,
+      "d4": 500,
+      "d5": "0164033E03E8"
+    }
+  }
+}

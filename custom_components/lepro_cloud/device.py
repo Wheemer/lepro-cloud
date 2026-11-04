@@ -8,11 +8,6 @@ from typing import Any
 DEVICE_TYPE_LIGHT = 1
 DEVICE_TYPE_PLUG = 2
 
-# Lepro appends a four-character opaque identifier to some user-assigned device
-# names (for example, ``girls room_U5O5``). It is not part of the name a user
-# chose and should not be presented as one in Home Assistant.
-_APPENDED_NAME_SUFFIX = re.compile(r"^(?P<name>.+?)_[A-Z0-9]{4}$")
-
 
 def device_type(device: dict[str, Any]) -> int | None:
     """Return the verified Wi-Fi device type from a discovery payload."""
@@ -29,23 +24,52 @@ def device_type(device: dict[str, Any]) -> int | None:
 
 def device_name(device: dict[str, Any], fallback: str = "Lepro Device") -> str:
     """Return the best display name from a discovery payload."""
-    for key in ("name", "deviceName", "devName", "nickname", "mac"):
+    for key in ("friendlyName", "nickname", "deviceName", "devName"):
+        value = device.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    inherited = device.get("_display_name")
+    if isinstance(inherited, str) and inherited:
+        return inherited
+    for key in ("name", "mac"):
         value = device.get(key)
         if value:
             name = str(value).strip()
-            match = _APPENDED_NAME_SUFFIX.match(name)
-            return match.group("name") if match else name
+            # The APK displays DeviceEntity.name verbatim. An underscore and
+            # four characters alone do not prove that a user name has a suffix.
+            # AddDeviceNewActivity creates factory names as series_deviceSn.
+            series, serial = device.get("series"), device.get("deviceSn")
+            if key == "name" and series and serial and name == f"{series}_{serial}":
+                return str(series)
+            return name
     return fallback
+
+
+def preserve_device_name(device: dict[str, Any], previous_name: str | None) -> None:
+    """Retain a known friendly name when cloud discovery adds an opaque suffix."""
+    device.pop("_display_name", None)
+    raw = device.get("name")
+    if not isinstance(raw, str) or not previous_name:
+        return
+    # Registry history proves the prefix; do not strip arbitrary new user names.
+    if re.fullmatch(re.escape(previous_name) + r"_[A-Z0-9]{4}", raw):
+        device["_display_name"] = previous_name
 
 
 def is_light(device: dict[str, Any]) -> bool:
     """Return true when discovery identifies a Wi-Fi light."""
-    return device_type(device) == DEVICE_TYPE_LIGHT
+    return device_type(device) == DEVICE_TYPE_LIGHT and has_cloud_control(device)
 
 
 def is_plug(device: dict[str, Any]) -> bool:
     """Return true when discovery identifies a Wi-Fi plug."""
-    return device_type(device) == DEVICE_TYPE_PLUG
+    return device_type(device) == DEVICE_TYPE_PLUG and has_cloud_control(device)
+
+
+def has_cloud_control(device: dict[str, Any]) -> bool:
+    """Missing legacy metadata is tolerated; explicit BLE-only is not."""
+    control = device.get("control")
+    return control is None or str(control) in {"2", "3"}
 
 
 def is_supported_device(device: dict[str, Any]) -> bool:

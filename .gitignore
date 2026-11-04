@@ -54,3 +54,5 @@ scripts.yaml
 .codex/
 codex-scratch/
 CODEX_*.md
+
+.test-output/

@@ -6,7 +6,9 @@ import os
 from pathlib import Path
 
 ENV_MQTT_KEY_FILE = "LEPRO_MQTT_CLIENT_KEY_FILE"
-PACKAGE_PRIVATE_KEY = Path(__file__).resolve().parent / "_private" / "mqtt_client_key.pem"
+PACKAGE_PRIVATE_KEY = (
+    Path(__file__).resolve().parent / "_private" / "mqtt_client_key.pem"
+)
 WORKSPACE_PRIVATE_KEY = Path.cwd() / ".lepro_private" / "mqtt_client_key.pem"
 
 
@@ -16,8 +18,7 @@ class MqttKeyError(Exception):
 
 def _is_private_key_pem(value: str) -> bool:
     return (
-        "-----BEGIN PRIVATE KEY-----" in value
-        and "-----END PRIVATE KEY-----" in value
+        "-----BEGIN PRIVATE KEY-----" in value and "-----END PRIVATE KEY-----" in value
     ) or (
         "-----BEGIN RSA PRIVATE KEY-----" in value
         and "-----END RSA PRIVATE KEY-----" in value
@@ -39,7 +40,10 @@ def load_mqtt_private_key() -> str:
     for path in mqtt_private_key_candidates():
         if not path.is_file():
             continue
-        key = path.read_text(encoding="utf-8").strip()
+        try:
+            key = path.read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeError) as err:
+            raise MqttKeyError("Unable to read Lepro Cloud's MQTT credential") from err
         if not _is_private_key_pem(key):
             raise MqttKeyError("Lepro Cloud's bundled MQTT credential is invalid")
         return f"{key}\n"

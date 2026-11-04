@@ -2,6 +2,11 @@ name: Publish Release
 
 on:
   workflow_dispatch:
+    inputs:
+      verification_run_id:
+        description: Successful Release Verification run for this exact tag commit
+        required: true
+        type: string
 
 permissions: {}
 
@@ -11,6 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: read
 
     steps:
       - name: Checkout release tag
@@ -28,16 +34,14 @@ jobs:
         run: |
           python -c "import json, os, sys; from pathlib import Path; version = json.loads(Path('custom_components/lepro_cloud/manifest.json').read_text())['version']; sys.exit('Tag does not match manifest version') if os.environ['RELEASE_TAG'] != f'v{version}' else None"
 
-      - name: Build integration ZIP
+      - name: Download and require the exact verified artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFICATION_RUN_ID: ${{ inputs.verification_run_id }}
         run: |
-          mkdir -p dist
-          (
-            cd custom_components/lepro_cloud
-            git archive --format=zip --output=../../dist/lepro_cloud.zip HEAD .
-          )
-          unzip -Z1 dist/lepro_cloud.zip | grep -Fx "manifest.json"
-          unzip -Z1 dist/lepro_cloud.zip | grep -Fx "brand/icon.png"
-          unzip -Z1 dist/lepro_cloud.zip | grep -Fx "_private/mqtt_client_key.pem"
+          gh run download "$VERIFICATION_RUN_ID" --name "lepro-cloud-$GITHUB_REF_NAME" --dir dist
+          python scripts/check_verification.py
+          python scripts/build_release.py dist/lepro_cloud.zip --verify-only
 
       - name: Publish GitHub release
         env:
