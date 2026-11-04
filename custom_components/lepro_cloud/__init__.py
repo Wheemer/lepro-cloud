@@ -13,14 +13,18 @@ from .client import (
     cache_authenticated_api,
     take_authenticated_api,
 )
-from .const import PLATFORMS
+from .const import DOMAIN, PLATFORMS
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Lepro Cloud from a config entry."""
-    coordinator = LeproCoordinator(
-        hass, entry, api=take_authenticated_api(hass, entry.unique_id)
-    )
+    api = take_authenticated_api(hass, entry.unique_id)
+    if entry.data.get("auth_implementation") == DOMAIN:
+        from .app_auth import LeproAppApi
+
+        if not isinstance(api, LeproAppApi):
+            api = LeproAppApi(hass, entry)
+    coordinator = LeproCoordinator(hass, entry, api=api)
     try:
         await coordinator.async_start()
     except LeproAuthError as err:

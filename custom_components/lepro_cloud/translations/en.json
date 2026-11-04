@@ -3,10 +3,10 @@
     "step": {
       "user": {
         "title": "Lepro Cloud",
-        "description": "Sign in with your Lepro Home account. Lepro selects the account's regional server automatically.",
-        "data": {
-          "username": "Email address",
-          "password": "Password"
+        "description": "Choose how to sign in.",
+        "menu_options": {
+          "email": "Email address and password",
+          "app": "Sign in through the Lepro app (including Apple accounts)"
         }
       },
       "reconfigure": {
@@ -24,6 +24,18 @@
           "username": "Email address",
           "password": "Password"
         }
+      },
+      "email": {
+        "title": "Lepro Cloud",
+        "description": "Sign in with your Lepro Home account. Lepro selects the account's regional server automatically.",
+        "data": {
+          "username": "Email address",
+          "password": "Password"
+        }
+      },
+      "app": {
+        "title": "Authorize Lepro Cloud",
+        "description": "Continue on the iPhone where the Lepro app is installed and signed in. Open the authorization link and approve access in Lepro, then return to Home Assistant. Your Apple password stays with Apple."
       }
     },
     "error": {
@@ -36,7 +48,18 @@
     "abort": {
       "already_configured": "This Lepro Cloud account is already configured.",
       "reconfigure_successful": "Lepro Cloud configuration updated.",
-      "reauth_successful": "Lepro Cloud reconnected."
+      "reauth_successful": "Lepro Cloud reconnected.",
+      "invalid_auth": "Lepro authorization expired or was rejected. Try signing in again.",
+      "cannot_connect": "Could not complete Lepro authorization. Please try again.",
+      "wrong_account": "Authorize the same Lepro account to reconnect this integration.",
+      "no_url_available": "Home Assistant could not determine its callback address. Open setup from the Home Assistant interface.",
+      "user_rejected_authorize": "Authorization was cancelled.",
+      "authorize_url_timeout": "Could not open Lepro authorization. Please try again.",
+      "oauth_timeout": "Lepro authorization timed out. Please try again.",
+      "oauth_unauthorized": "Lepro authorization expired or was rejected. Try signing in again.",
+      "oauth_failed": "Could not complete Lepro authorization. Please try again.",
+      "oauth_error": "Lepro returned incomplete authorization credentials.",
+      "oauth_implementation_unavailable": "Lepro app authorization is unavailable. Please try again."
     }
   }
 }

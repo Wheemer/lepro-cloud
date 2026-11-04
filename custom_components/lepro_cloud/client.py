@@ -65,6 +65,10 @@ class LeproApiError(LeproError):
 class LeproResponseError(LeproApiError):
     """Lepro cloud returned an application-level error."""
 
+    def __init__(self, message: str, *, code: int | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+
 
 class LeproMqttError(LeproError):
     """Lepro MQTT setup or publishing failed."""
@@ -130,6 +134,7 @@ class LeproApi:
         data: Mapping[str, Any] | None = None,
         *,
         _redirected: bool = False,
+        json_body: bool = False,
     ) -> dict[str, Any]:
         url = f"https://{self._host}{path}"
         try:
@@ -137,7 +142,7 @@ class LeproApi:
                 response = await self._session.request(
                     method,
                     url,
-                    data=data,
+                    **({"json": data} if json_body else {"data": data}),
                     headers=self._headers(),
                 )
                 try:
@@ -166,7 +171,9 @@ class LeproApi:
             if host not in REGIONS.values():
                 raise LeproResponseError("Lepro returned an unknown account region")
             self._host = host
-            return await self._request(method, path, data, _redirected=True)
+            return await self._request(
+                method, path, data, _redirected=True, json_body=json_body
+            )
         if response.status == 401 or code in (
             -202,
             -203,
@@ -183,7 +190,9 @@ class LeproApi:
         if response.status >= 500:
             raise LeproApiError(f"Lepro Cloud API error (HTTP {response.status})")
         if response.status >= 400 or code != 0:
-            raise LeproResponseError(f"Lepro Cloud rejected the request (code {code})")
+            raise LeproResponseError(
+                f"Lepro Cloud rejected the request (code {code})", code=code
+            )
 
         data_value = payload.get("data")
         if not isinstance(data_value, (dict, list)):
@@ -371,6 +380,7 @@ class LeproCoordinator:
         self._maintenance_task: asyncio.Task[None] | None = None
         self._refresh_requested = asyncio.Event()
         self._profile_signature = ""
+        self._mqtt_secret: str | None = None
         self._last_refresh = 0.0
         self._scene_cache: dict[str, list[dict[str, Any]]] = {}
         self._reauth_requested = False
@@ -385,7 +395,9 @@ class LeproCoordinator:
 
     async def async_start(self) -> None:
         """Authenticate, discover devices, and start MQTT."""
-        if not self.api.token or not self.api.secret:
+        if self.entry.data.get("auth_implementation") == DOMAIN:
+            await self.api.async_restore_session()
+        elif not self.api.token or not self.api.secret:
             await self.api.async_login(
                 self.entry.data["username"], self.entry.data["password"]
             )
@@ -415,6 +427,7 @@ class LeproCoordinator:
         certs = await self._resolve_certs(info, key, self.api.secret or "")
         await self._async_start_mqtt(info, certs)
         self._profile_signature = self._signature(info, certs)
+        self._mqtt_secret = self.api.secret
         self._maintenance_task = self.hass.async_create_background_task(
             self._maintain_session(), "Lepro Cloud refresh"
         )
@@ -586,10 +599,15 @@ class LeproCoordinator:
         key = await self.hass.async_add_executor_job(load_mqtt_private_key)
         certs = await self._resolve_certs(info, key, self.api.secret or "")
         signature = self._signature(info, certs)
-        if not self.connected or signature != self._profile_signature:
+        if (
+            not self.connected
+            or signature != self._profile_signature
+            or self._mqtt_secret != self.api.secret
+        ):
             await self._stop_transport()
             await self._async_start_mqtt(info, certs)
             self._profile_signature = signature
+            self._mqtt_secret = self.api.secret
         self._notify_all()
 
     async def _load_device_scenes(self) -> None:

@@ -63,3 +63,4 @@ jobs:
         run: |
           mkdir -p .test-output
           docker run --rm --network none -e PYTHONDONTWRITEBYTECODE=1 -v "$GITHUB_WORKSPACE:/source:ro" -v "$GITHUB_WORKSPACE/.test-output:/audit" lepro-test /source/tests/real_ha_regressions.py
+          docker run --rm --network none -e PYTHONDONTWRITEBYTECODE=1 -v "$GITHUB_WORKSPACE:/source:ro" -v "$GITHUB_WORKSPACE/.test-output:/audit" lepro-test /source/tests/real_ha_app_auth.py
