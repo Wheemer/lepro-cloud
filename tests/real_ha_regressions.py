@@ -367,6 +367,10 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
                         data = json.loads(body[2 + length :])
                         packets.append((topic, data))
                         if topic.endswith("/get"):
+                            if "d6" in data.get("d", []):
+                                # The APK's bulb GET omits scene writes. A strict
+                                # device can reject an unsupported GET datapoint.
+                                continue
                             writer.write(
                                 frame(
                                     topic + "r",
@@ -770,6 +774,23 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
         self.co.client = Broker()
         await self.hass.async_block_till_done()
         self.assertFalse(self.co.connected)
+
+    async def test_bulb_startup_query_matches_apk_without_scene_write_datapoints(self):
+        for series in ("B1", "SE1"):
+            self.broker.messages.clear()
+            self.co.devices = {
+                "123": {"did": "123", "type": 1, "series": series, "scenes": []}
+            }
+            self.co.effect_types = {series: "smartbulb"}
+            self.co._on_connect(self.broker, None, None, 0, None)
+            await self.hass.async_block_till_done()
+            queries = [
+                payload
+                for topic, payload in self.broker.messages
+                if topic.endswith("/get")
+            ]
+            self.assertEqual(len(queries), 1)
+            self.assertEqual(queries[0]["d"], ["online", "d1", "d2", "d3", "d4", "d5"])
 
     async def test_initial_query_failure_marks_transport_unready(self):
         self.broker.publish = lambda *args, **kwargs: SimpleNamespace(rc=1)

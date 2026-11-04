@@ -761,8 +761,6 @@ class LeproCoordinator:
             )
             if "d50" in scene_datapoints:
                 scene_datapoints += ("d52",)
-            if family == "smartbulb":
-                scene_datapoints += ("d6",)
             result = client.publish(
                 topic_get(did),
                 json.dumps(
