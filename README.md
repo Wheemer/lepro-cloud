@@ -90,9 +90,6 @@ Use your **Lepro account email address and password**. The account's regional se
 
 This option is intended for accounts using Apple sign-in. Start setup on the iPhone where Lepro is installed and signed in, choose **Sign in through the Lepro app**, and follow the authorization prompts.
 
-> [!IMPORTANT]
-> The authorization exchange and session renewal have passed server tests. The complete iPhone approval and return flow with an Apple-linked account is awaiting user confirmation. Please [report your result](https://github.com/Wheemer/lepro-cloud/issues/21), including where setup stops if it does not complete.
-
 ## Using Your Devices
 
 Devices appear under **Settings → Devices & services → Lepro Cloud** and can be added to dashboards or used in automations.
