@@ -30,7 +30,7 @@ from .const import (
     REGION_DISCOVERY_HOST,
     REGIONS,
 )
-from .device import is_supported_device
+from .device import device_name, is_supported_device, preserve_device_name
 from .mqtt_key import MqttKeyError, load_mqtt_private_key
 from .protocol import (
     DP_ONLINE,
@@ -378,6 +378,10 @@ class LeproCoordinator:
         self._pending_commands: dict[int, tuple[str, float]] = {}
         self._command_lock = threading.Lock()
         self._command_timers: set[asyncio.TimerHandle] = set()
+        self._initial_state_timer: asyncio.TimerHandle | None = None
+        self._state_query_retries = 0
+        self._property_messages = 0
+        self._accepted_reports = 0
 
     async def async_start(self) -> None:
         """Authenticate, discover devices, and start MQTT."""
@@ -567,9 +571,13 @@ class LeproCoordinator:
             # Preserve the dict referenced by entities; replace the source scenes.
             old = self.devices[did]
             picker = old.get("_color_picker")
+            previous_name = device_name(old)
+            native_temperature = old.get("_native_color_temp", False)
             old.clear()
             old.update(device)
             old["_color_picker"] = picker
+            old["_native_color_temp"] = native_temperature
+            preserve_device_name(old, previous_name)
         if await self._load_product_configs():
             self._schedule_reload()
             return
@@ -811,14 +819,44 @@ class LeproCoordinator:
         if hasattr(self, "_refresh_requested"):
             self.hass.loop.call_soon_threadsafe(self._refresh_requested.set)
 
+    def _cancel_initial_state_retry(self) -> None:
+        handle = getattr(self, "_initial_state_timer", None)
+        if handle:
+            handle.cancel()
+        self._initial_state_timer = None
+
+    def _retry_missing_state(self, client: mqtt.Client, attempt: int) -> None:
+        """Retry missed startup GET replies twice, without changing device state."""
+        if self._stopping or client is not self.client or not self.connected:
+            return
+        self._initial_state_timer = None
+        missing = self.devices.keys() - self._fresh
+        if not missing:
+            return
+        self._state_query_retries += 1
+        _LOGGER.debug(
+            "Retrying initial Lepro state queries for %s devices", len(missing)
+        )
+        for did in missing:
+            self._query_device(did)
+        if attempt < 2:
+            self._initial_state_timer = self.hass.loop.call_later(
+                REQUEST_TIMEOUT, self._retry_missing_state, client, attempt + 1
+            )
+
     def _set_transport_state(self, client: mqtt.Client, connected: bool) -> None:
         """Serialize connection state and freshness with HA entity reads."""
         if self._stopping or client is not getattr(self, "client", None):
             return
+        self._cancel_initial_state_retry()
         if connected:
             self._fresh = set()
             for state in self.states.values():
                 state.pop(DP_ONLINE, None)
+            if self.devices:
+                self._initial_state_timer = self.hass.loop.call_later(
+                    REQUEST_TIMEOUT, self._retry_missing_state, client, 1
+                )
         self.connected = connected
         self._notify_all()
 
@@ -870,13 +908,16 @@ class LeproCoordinator:
             did = parts[1]
             if did not in self.devices or message.topic not in subscription_topics(did):
                 return
-            if "c" in payload:
-                self.hass.loop.call_soon_threadsafe(
-                    self._command_response, did, payload.get("id"), payload["c"]
-                )
-                if str(payload["c"]) != "0":
-                    return
-            state = payload.get("d", {})
+            self.hass.loop.call_soon_threadsafe(self._record_property_message)
+            # APK MqttConnectionPool dispatches d-bearing messages as state,
+            # regardless of c. Only c-only envelopes are command responses.
+            if "d" not in payload:
+                if "c" in payload:
+                    self.hass.loop.call_soon_threadsafe(
+                        self._command_response, did, payload.get("id"), payload["c"]
+                    )
+                return
+            state = payload["d"]
         except (UnicodeDecodeError, json.JSONDecodeError, AttributeError):
             _LOGGER.debug("Ignoring malformed Lepro MQTT message")
             return
@@ -938,6 +979,10 @@ class LeproCoordinator:
         handle = self.hass.loop.call_later(10, expire)
         self._command_timers.add(handle)
 
+    def _record_property_message(self) -> None:
+        if not self._stopping:
+            self._property_messages = getattr(self, "_property_messages", 0) + 1
+
     def _apply_report(self, did: str, state: dict[str, Any]) -> None:
         """Apply a broker report on Home Assistant's event loop."""
         if self._stopping:
@@ -946,6 +991,9 @@ class LeproCoordinator:
         if not hasattr(self, "_fresh"):
             self._fresh = set()
         self._fresh.add(did)
+        self._accepted_reports = getattr(self, "_accepted_reports", 0) + 1
+        if self.devices.keys() <= self._fresh:
+            self._cancel_initial_state_retry()
         self._notify(did)
 
     def _schedule_device_updates(self) -> None:
@@ -1015,6 +1063,7 @@ class LeproCoordinator:
         if hasattr(self, "_command_lock"):
             with self._command_lock:
                 self._pending_commands.clear()
+        self._cancel_initial_state_retry()
         self._fresh = set()
         client = self.client
         self.client = None

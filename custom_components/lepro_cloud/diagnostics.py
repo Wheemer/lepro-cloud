@@ -16,6 +16,9 @@ async def async_get_config_entry_diagnostics(
     return {
         "region": entry.data.get("region"),
         "mqtt_connected": coordinator.connected,
+        "mqtt_messages_received": getattr(coordinator, "_property_messages", 0),
+        "state_reports_accepted": getattr(coordinator, "_accepted_reports", 0),
+        "state_query_retry_rounds": getattr(coordinator, "_state_query_retries", 0),
         "devices": [
             {
                 "series": str(device.get("series", "unknown")),

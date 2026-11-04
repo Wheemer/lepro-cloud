@@ -99,10 +99,403 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
             None,
             SimpleNamespace(
                 topic=f"le/{did}/prp/{suffix}",
-                payload=json.dumps({"d": data, **extra}).encode(),
+                payload=json.dumps(
+                    {**extra} if data is None else {"d": data, **extra}
+                ).encode(),
             ),
         )
         await asyncio.sleep(0)
+
+    async def test_se1_state_object_is_not_discarded_as_a_command_error(self):
+        fixture = json.loads(
+            (Path(__file__).parent / "fixtures/se1_upgrade.json").read_text()
+        )
+        did = fixture["device"]["did"]
+        self.co.devices = {did: dict(fixture["device"])}
+        self.co.connected = False
+        self.co._on_connect(self.broker, None, None, 0, None)
+        await self.hass.async_block_till_done()
+        self.co._on_message(
+            self.broker,
+            None,
+            SimpleNamespace(
+                topic=f"le/{did}/prp/getr",
+                payload=json.dumps(fixture["report"]).encode(),
+            ),
+        )
+        await self.hass.async_block_till_done()
+        self.assertTrue(self.co.device_available(did))
+        self.assertEqual(self.co.states[did]["d1"], 1)
+
+    async def test_se1_prior_registry_name_and_capabilities_survive_real_upgrade(self):
+        fixture = json.loads(
+            (Path(__file__).parent / "fixtures/se1_upgrade.json").read_text()
+        )
+        hass = await self._prepare_platforms()
+        kwargs = {
+            "domain": "lepro_cloud",
+            "title": "SE1 upgrade",
+            "data": self.entry.data,
+            "options": {},
+            "source": "user",
+            "unique_id": self.entry.unique_id,
+            "version": 1,
+            "minor_version": 1,
+            "discovery_keys": MappingProxyType({}),
+            "subentries_data": [],
+        }
+        entry = ConfigEntry(
+            **{
+                k: v
+                for k, v in kwargs.items()
+                if k in inspect.signature(ConfigEntry).parameters
+            }
+        )
+        did = fixture["device"]["did"]
+
+        async def old_start(co):
+            co.devices = {
+                did: {**fixture["device"], "friendlyName": fixture["prior_name"]}
+            }
+            co.connected = True
+            co._fresh = {did}
+            co.states = {did: dict(fixture["report"]["d"])}
+
+        with patch.object(client.LeproCoordinator, "async_start", old_start):
+            await hass.config_entries.async_add(entry)
+            await hass.async_block_till_done()
+        registry = entity_registry.async_get(hass)
+        old_entities = entity_registry.async_entries_for_config_entry(
+            registry, entry.entry_id
+        )
+        light_id = next(e.entity_id for e in old_entities if e.domain == "light")
+        sensor_id = next(
+            e.entity_id for e in old_entities if e.domain == "binary_sensor"
+        )
+        self.assertEqual(
+            hass.states.get(light_id).attributes["friendly_name"], "girls room"
+        )
+        self.assertIn(
+            "color_temp", hass.states.get(light_id).attributes["supported_color_modes"]
+        )
+        await hass.config_entries.async_unload(entry.entry_id)
+
+        co_api = SimpleNamespace(
+            token="fixture",
+            secret="fixture",
+            _host="api.example.invalid",
+            async_login=AsyncMock(),
+            async_profile=AsyncMock(
+                return_value={
+                    "mqtt": {
+                        "host": "unused",
+                        "port": 8883,
+                        "root": "root",
+                        "cert": "cert",
+                    }
+                }
+            ),
+            async_devices=AsyncMock(side_effect=lambda: [dict(fixture["device"])]),
+            async_product_configs=AsyncMock(return_value=[fixture["product_config"]]),
+            async_device_scenes=AsyncMock(return_value=[]),
+        )
+        client.cache_authenticated_api(hass, entry.unique_id, co_api)
+        seen = []
+
+        def transport(co, info, certs):
+            co.client = Broker()
+            seen.append(co)
+            co._on_connect(co.client, None, None, 0, None)
+
+        with (
+            patch.object(client.LeproCoordinator, "_start_mqtt", transport),
+            patch.object(
+                client.LeproCoordinator,
+                "_resolve_certs",
+                AsyncMock(return_value={"root": "root", "cert": "cert", "key": "key"}),
+            ),
+            patch.object(client, "load_mqtt_private_key", return_value="key"),
+        ):
+            self.assertTrue(await hass.config_entries.async_setup(entry.entry_id))
+            await hass.async_block_till_done()
+            co = entry.runtime_data
+            # Check metadata before any fresh state can hide the upgrade defect.
+            with self.subTest(regression="friendly name"):
+                self.assertEqual(
+                    hass.states.get(light_id).attributes["friendly_name"], "girls room"
+                )
+            with self.subTest(regression="colour temperature"):
+                self.assertIn(
+                    "color_temp",
+                    hass.states.get(light_id).attributes["supported_color_modes"],
+                )
+            self.assertEqual(hass.states.get(light_id).state, "unavailable")
+            self.assertEqual(hass.states.get(sensor_id).state, "unknown")
+            for suffix in ("getr", "rpt"):
+                co._on_message(
+                    co.client,
+                    None,
+                    SimpleNamespace(
+                        topic=f"le/{did}/prp/{suffix}",
+                        payload=json.dumps(fixture["report"]).encode(),
+                    ),
+                )
+                await hass.async_block_till_done()
+                current = hass.states.get(light_id)
+                self.assertEqual(current.state, "on")
+                self.assertEqual(current.attributes["friendly_name"], "girls room")
+                self.assertEqual(current.attributes["brightness"], 255)
+                self.assertEqual(current.attributes["hs_color"], (356.0, 83.0))
+                self.assertIn("color_temp", current.attributes["supported_color_modes"])
+                self.assertEqual(hass.states.get(sensor_id).state, "on")
+            self.assertTrue(
+                all(topic.endswith("/get") for topic, _ in co.client.messages)
+            )
+            self.assertEqual(
+                {
+                    e.entity_id
+                    for e in entity_registry.async_entries_for_config_entry(
+                        registry, entry.entry_id
+                    )
+                },
+                {e.entity_id for e in old_entities},
+            )
+            await co._refresh_session()
+            await hass.async_block_till_done()
+            self.assertEqual(
+                hass.states.get(light_id).attributes["friendly_name"], "girls room"
+            )
+            self.assertIn(
+                "color_temp",
+                hass.states.get(light_id).attributes["supported_color_modes"],
+            )
+            self.assertTrue(await hass.config_entries.async_reload(entry.entry_id))
+            await hass.async_block_till_done()
+            co = entry.runtime_data
+            self.assertIsNot(co, seen[0])
+            co_api.async_login.assert_not_called()
+            self.assertEqual(
+                hass.states.get(light_id).attributes["friendly_name"], "girls room"
+            )
+            self.assertIn(
+                "color_temp",
+                hass.states.get(light_id).attributes["supported_color_modes"],
+            )
+            co._on_message(
+                co.client,
+                None,
+                SimpleNamespace(
+                    topic=f"le/{did}/prp/getr",
+                    payload=json.dumps(fixture["report"]).encode(),
+                ),
+            )
+            await hass.async_block_till_done()
+            await hass.services.async_call(
+                "light",
+                "turn_on",
+                {"entity_id": light_id, "color_temp_kelvin": 4000},
+                blocking=True,
+            )
+            command = co.client.messages[-1]
+            self.assertTrue(command[0].endswith("/set"))
+            self.assertEqual(command[1]["d"], {"d1": 1, "d2": 0, "d3": 1000, "d4": 342})
+            co._on_message(
+                co.client,
+                None,
+                SimpleNamespace(
+                    topic=f"le/{did}/prp/rpt",
+                    payload=json.dumps(
+                        {"c": 200, "d": {"online": 0, "d1": 1}}
+                    ).encode(),
+                ),
+            )
+            await hass.async_block_till_done()
+            self.assertEqual(hass.states.get(light_id).state, "unavailable")
+            self.assertEqual(hass.states.get(sensor_id).state, "off")
+            self.assertTrue(await hass.config_entries.async_unload(entry.entry_id))
+
+    async def test_missing_first_se1_reply_is_retried_without_any_set(self):
+        fixture = json.loads(
+            (Path(__file__).parent / "fixtures/se1_upgrade.json").read_text()
+        )
+        did = fixture["device"]["did"]
+        self.co.devices = {did: dict(fixture["device"])}
+        published = self.broker.publish
+
+        def drop_first(topic, payload, qos=0):
+            result = published(topic, payload, qos)
+            if len(self.broker.messages) == 2:
+                self.co._on_message(
+                    self.broker,
+                    None,
+                    SimpleNamespace(
+                        topic=f"le/{did}/prp/getr",
+                        payload=json.dumps(fixture["report"]).encode(),
+                    ),
+                )
+            return result
+
+        self.broker.publish = drop_first
+        with patch.object(client, "REQUEST_TIMEOUT", 0.01):
+            self.co._on_connect(self.broker, None, None, 0, None)
+            await self.hass.async_block_till_done()
+            self.assertFalse(self.co.device_available(did))
+            async with asyncio.timeout(2):
+                while not self.co.device_available(did):
+                    await asyncio.sleep(0.001)
+            await self.hass.async_block_till_done()
+            self.assertTrue(self.co.device_available(did))
+            self.assertEqual(len(self.broker.messages), 2)
+            self.assertTrue(
+                all(topic.endswith("/get") for topic, _ in self.broker.messages)
+            )
+            self.assertIsNone(self.co._initial_state_timer)
+
+    async def test_missing_state_retries_are_bounded_and_unload_cancels_them(self):
+        self.co.devices = {"123": {"did": "123", "type": 1, "series": "SE1"}}
+        with patch.object(client, "REQUEST_TIMEOUT", 0.005):
+            self.co._on_connect(self.broker, None, None, 0, None)
+            async with asyncio.timeout(2):
+                while len(self.broker.messages) < 3:
+                    await asyncio.sleep(0.001)
+            await self.hass.async_block_till_done()
+            self.assertEqual(len(self.broker.messages), 3)
+            self.assertEqual(self.co._state_query_retries, 2)
+            self.assertIsNone(self.co._initial_state_timer)
+        self.co._on_connect(self.broker, None, None, 0, None)
+        await self.hass.async_block_till_done()
+        handle = self.co._initial_state_timer
+        self.assertIsNotNone(handle)
+        await self.co.async_stop()
+        self.assertTrue(handle.cancelled())
+        self.assertIsNone(self.co._initial_state_timer)
+
+    async def test_data_envelopes_and_c_only_responses_have_separate_dispatch(self):
+        self.co.devices = {"123": {"did": "123", "type": 1, "series": "SE1"}}
+        for suffix in ("rpt", "getr", "setr"):
+            for code in (0, 1, 200, -1, "not-a-result"):
+                self.co.states.clear()
+                await self.report(
+                    "123",
+                    {"d1": 1, "d2": 1, "d5": "0164033E03E8"},
+                    suffix=suffix,
+                    c=code,
+                )
+                self.assertEqual(self.co.states["123"]["d1"], 1)
+                self.assertTrue(self.co.device_available("123"))
+        self.assertFalse(self.broker.messages)
+
+    async def test_certificate_http_endpoint_requires_app_authentication(self):
+        import datetime
+        import ipaddress
+        import ssl
+
+        from aiohttp import ClientSession, TCPConnector, web
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.x509.oid import NameOID
+
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        name = x509.Name(
+            [x509.NameAttribute(NameOID.COMMON_NAME, "local certificate fixture")]
+        )
+        now = datetime.datetime.now(datetime.UTC)
+        cert = (
+            x509.CertificateBuilder()
+            .subject_name(name)
+            .issuer_name(name)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now - datetime.timedelta(days=1))
+            .not_valid_after(now + datetime.timedelta(days=1))
+            .add_extension(
+                x509.SubjectAlternativeName(
+                    [x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]
+                ),
+                critical=False,
+            )
+            .sign(key, hashes.SHA256())
+        )
+        root = Path(self.hass.config.config_dir)
+        cert_path = root / "http-cert.pem"
+        key_path = root / "http-key.pem"
+        pem = cert.public_bytes(serialization.Encoding.PEM).decode()
+        cert_path.write_text(pem)
+        key_path.write_bytes(
+            key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.PKCS8,
+                serialization.NoEncryption(),
+            )
+        )
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(cert_path, key_path)
+        seen = []
+
+        async def certificate(request):
+            seen.append(dict(request.headers))
+            if request.headers.get("Authorization") != "Bearer fixture-token":
+                return web.Response(status=403)
+            return web.Response(text=pem)
+
+        app = web.Application()
+        app.router.add_get("/cert", certificate)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        try:
+            # Container has --network none; this port is never exposed to the host.
+            await web.TCPSite(runner, "127.0.0.1", 443, ssl_context=context).start()
+            trust = ssl.create_default_context(cafile=str(cert_path))
+            async with ClientSession(connector=TCPConnector(ssl=trust)) as session:
+                api = client.LeproApi.__new__(client.LeproApi)
+                api._host = "127.0.0.1"
+                api._session = session
+                api.token = "fixture-token"
+                self.assertEqual(await api.async_text("https://127.0.0.1/cert"), pem)
+                self.assertEqual(seen[0]["App-Name"], client.APP_NAME)
+                api.token = None
+                with self.assertRaises(client.LeproApiError):
+                    await api.async_text("https://127.0.0.1/cert")
+        finally:
+            await runner.cleanup()
+
+    async def test_rgb_bulb_temperature_evidence_does_not_leak_into_diy_products(self):
+        did = "lamp"
+        for series, picker in (("SE1", "rgb"), ("S1-10", "diy2")):
+            self.co.devices[did].update(series=series, _color_picker=picker)
+            self.co.effect_types = {
+                series: "smartbulb" if series == "SE1" else "striplight"
+            }
+            self.co.states[did] = {"d4": 500, "d5": "0164033E03E8"}
+            entity = light.LeproCloudLight(self.co, did, self.co.devices[did])
+            self.assertEqual(
+                light.ColorMode.COLOR_TEMP in entity.supported_color_modes,
+                series == "SE1",
+            )
+        self.co.devices[did]["_color_picker"] = ""
+        self.assertEqual(entity.supported_color_modes, {light.ColorMode.BRIGHTNESS})
+
+    async def test_diagnostics_distinguishes_no_reply_from_rejected_state(self):
+        self.entry.runtime_data = self.co
+        data = await diagnostics.async_get_config_entry_diagnostics(
+            self.hass, self.entry
+        )
+        self.assertEqual(data["mqtt_messages_received"], 0)
+        self.assertEqual(data["state_reports_accepted"], 0)
+        await self.report("lamp", {"d5": "invalid"})
+        data = await diagnostics.async_get_config_entry_diagnostics(
+            self.hass, self.entry
+        )
+        self.assertEqual(data["mqtt_messages_received"], 1)
+        self.assertEqual(data["state_reports_accepted"], 0)
+        await self.report("lamp", {"d1": 1}, c=200)
+        data = await diagnostics.async_get_config_entry_diagnostics(
+            self.hass, self.entry
+        )
+        self.assertEqual(data["mqtt_messages_received"], 2)
+        self.assertEqual(data["state_reports_accepted"], 1)
+        self.assertEqual(data["state_query_retry_rounds"], 0)
 
     async def test_full_startup_and_stop_with_existing_session(self):
         profile = {
@@ -376,6 +769,7 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
                                     topic + "r",
                                     {
                                         "id": data["id"],
+                                        "c": 200,  # d-bearing envelope is still state.
                                         "d": {"d1": 1, "d2": 0, "d3": 500},
                                     },
                                 )
@@ -384,7 +778,12 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
                             writer.write(
                                 frame(
                                     topic + "r",
-                                    {"id": data["id"], "c": 0, "d": data["d"]},
+                                    {"id": data["id"], "c": 0},
+                                )
+                            )
+                            writer.write(
+                                frame(
+                                    topic.rsplit("/", 1)[0] + "/rpt", {"d": data["d"]}
                                 )
                             )
                     elif kind == 14:
@@ -1078,9 +1477,9 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0)
         self.assertNotIn("plug", self.co.states)
         identifier = self.broker.messages[-1][1]["id"]
-        await self.report("lamp", {}, suffix="setr", id=identifier, c=0)
+        await self.report("lamp", None, suffix="setr", id=identifier, c=0)
         self.assertIn(identifier, self.co._pending_commands)
-        await self.report("plug", {}, suffix="setr", id=identifier, c=1)
+        await self.report("plug", None, suffix="setr", id=identifier, c=1)
         self.assertNotIn(identifier, self.co._pending_commands)
         self.assertNotIn("plug", self.co.states)
         self.assertEqual(self.broker.messages[-1][0], "le/plug/prp/get")
@@ -1259,6 +1658,9 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
 
     async def _prepare_platforms(self):
         hass = self.hass
+        from homeassistant.helpers import frame
+
+        frame.async_setup(hass)
         loader.async_setup(hass)
         hass.config.components.add("persistent_notification")
         hass.config_entries = ConfigEntries(hass, {})

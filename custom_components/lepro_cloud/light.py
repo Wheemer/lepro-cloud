@@ -173,8 +173,20 @@ class LeproCloudLight(LightEntity):
             return {ColorMode.BRIGHTNESS}
         if picker == "rgbcw":
             return {ColorMode.HS, ColorMode.COLOR_TEMP}
+        if picker == "rgb":
+            modes = {ColorMode.HS}
+            if effect_family(
+                self.device, self.coordinator.effect_types
+            ) == "smartbulb" and (
+                self.device.get("_native_color_temp")
+                or (
+                    DP_TEMPERATURE in state
+                    and lepro_temperature_to_kelvin(state[DP_TEMPERATURE]) is not None
+                )
+            ):
+                modes.add(ColorMode.COLOR_TEMP)
+            return modes
         if picker in {
-            "rgb",
             "diy",
             "diy2",
             "diyEaves",

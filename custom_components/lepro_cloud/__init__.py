@@ -87,7 +87,8 @@ def _reconcile_registry(
     from homeassistant.helpers import entity_registry as er
 
     from .const import DOMAIN
-    from .device import device_info
+    from .device import device_info, preserve_device_name
+    from .scenes import effect_family
 
     devices = dr.async_get(hass)
     entities = er.async_get(hass)
@@ -109,7 +110,23 @@ def _reconcile_registry(
                 )
             continue
         _, did = next(iter(identifiers))
-        info = device_info(coordinator.devices[did], did)
+        device = coordinator.devices[did]
+        preserve_device_name(device, registered.name)
+        # A picker selects an app UI, not a complete inventory of native controls.
+        # Keep an existing ordinary bulb's CT control until fresh reports arrive.
+        if (
+            device.get("_color_picker") == "rgb"
+            and effect_family(device, coordinator.effect_types) == "smartbulb"
+        ):
+            for entity in er.async_entries_for_device(entities, registered.id):
+                if (
+                    entity.config_entry_id == entry.entry_id
+                    and entity.domain == "light"
+                ):
+                    capabilities = entity.capabilities or {}
+                    if "color_temp" in capabilities.get("supported_color_modes", []):
+                        device["_native_color_temp"] = True
+        info = device_info(device, did)
         devices.async_update_device(
             registered.id,
             **{

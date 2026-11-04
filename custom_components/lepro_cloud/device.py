@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 DEVICE_TYPE_LIGHT = 1
@@ -27,6 +28,9 @@ def device_name(device: dict[str, Any], fallback: str = "Lepro Device") -> str:
         value = device.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
+    inherited = device.get("_display_name")
+    if isinstance(inherited, str) and inherited:
+        return inherited
     for key in ("name", "mac"):
         value = device.get(key)
         if value:
@@ -39,6 +43,17 @@ def device_name(device: dict[str, Any], fallback: str = "Lepro Device") -> str:
                 return str(series)
             return name
     return fallback
+
+
+def preserve_device_name(device: dict[str, Any], previous_name: str | None) -> None:
+    """Retain a known friendly name when cloud discovery adds an opaque suffix."""
+    device.pop("_display_name", None)
+    raw = device.get("name")
+    if not isinstance(raw, str) or not previous_name:
+        return
+    # Registry history proves the prefix; do not strip arbitrary new user names.
+    if re.fullmatch(re.escape(previous_name) + r"_[A-Z0-9]{4}", raw):
+        device["_display_name"] = previous_name
 
 
 def is_light(device: dict[str, Any]) -> bool:

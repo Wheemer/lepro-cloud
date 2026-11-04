@@ -133,7 +133,10 @@ def test_mqtt_connect_uses_the_app_qos_zero_startup_request() -> None:
     coordinator.states = {}
     coordinator.listeners = set()
     coordinator.hass = types.SimpleNamespace(
-        loop=types.SimpleNamespace(call_soon_threadsafe=lambda fn, *args: fn(*args))
+        loop=types.SimpleNamespace(
+            call_soon_threadsafe=lambda fn, *args: fn(*args),
+            call_later=lambda *args: types.SimpleNamespace(cancel=lambda: None),
+        )
     )
     coordinator._schedule_device_updates = lambda: None
     coordinator.client = mqtt_client
@@ -179,7 +182,10 @@ def test_mqtt_connect_queries_scene_datapoints_for_unlisted_rgbic_series() -> No
     coordinator.states = {}
     coordinator.listeners = set()
     coordinator.hass = types.SimpleNamespace(
-        loop=types.SimpleNamespace(call_soon_threadsafe=lambda fn, *args: fn(*args))
+        loop=types.SimpleNamespace(
+            call_soon_threadsafe=lambda fn, *args: fn(*args),
+            call_later=lambda *args: types.SimpleNamespace(cancel=lambda: None),
+        )
     )
     coordinator._schedule_device_updates = lambda: None
     coordinator.client = mqtt_client

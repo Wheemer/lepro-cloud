@@ -17,7 +17,7 @@ refer to `tests/real_ha_regressions.py` unless another file is named.
 | P07 | Context-aware clamps and S1-10 firmware compensation; TV has its separate direct slider mapping | `test_apk_brightness_ranges_and_firmware_compensation`, `test_low_tv_brightness_and_white_readback_use_the_correct_fields` |
 | P08 | Validated partial reports infer status with explicit offline precedence; report handling never sends SET | `test_partial_reports_and_explicit_offline_precedence` |
 | P09 | Secret-matched account actions, logout reauth and disable discovery refresh; unknown actions do nothing | `test_account_action_requires_matching_secret_and_logout_reauths_once`, `test_account_disable_and_unknown_actions_only_request_discovery`, `test_forced_logout_reauth_survives_an_already_failed_refresh_task` |
-| P10 | Correlated c-only response handling; rejection/timeout queries state; queue acceptance is not confirmation | `test_command_queue_acceptance_does_not_fabricate_state`, `test_command_timeout_only_queries_and_cleanup_cancels_timers` |
+| P10 | APK d-bearing state dispatch is separate from correlated c-only responses; rejection/timeout queries state; queue acceptance is not confirmation | `test_command_queue_acceptance_does_not_fabricate_state`, `test_command_timeout_only_queries_and_cleanup_cancels_timers` |
 | P11 | Explicit BLE-only and unknown transports are excluded | `test_ble_only_filter_and_packaged_catalog` |
 | P12 | Both complete ordinary bulb presets are included; saved multipart patterns pass through unchanged. Rhythm parameter catalogs are not presented as ordinary scenes | `scripts/check_apk_evidence.py`, `test_saved_brightness_metadata_is_used_unless_ha_overrides_it`, TB1 multipart fixture in `test_platform_devices.py` |
 | P13 | Packaged 70-product fallback, refreshed remote metadata and last-good configuration on outage | `test_product_metadata_refresh_merges_fields_and_retains_last_good_data`, `test_remote_effect_override_does_not_fall_back_to_old_bulb_presets`, APK comparison script |
@@ -35,9 +35,9 @@ refer to `tests/real_ha_regressions.py` unless another file is named.
 | L06 | REST siblings, executor startup, partial platform setup, timers and transport clean up on failure/cancellation | REST cancellation, cancelled-worker-failure, partial-forward failure, failed-maintenance, unload-during-reauth and cleanup cases |
 | L07 | Check startup queue results and SUBACK; eleven-device requests are exercised | Eleven-device, initial query failure, subscription rejection and real TLS cases |
 | L08 | **Corrected audit claim:** LoginActivity.java:265 trims both credentials. Existing trimming matches the APK and is retained | `test_login_input_matches_app_whitespace_trimming` in `test_config_flow_errors.py` |
-| L09 | Reviewed picker metadata supplies stable capabilities; DIY pickers do not acquire native temperature support from placeholder d4; malformed HSV is rejected | `test_all_known_picker_capabilities_are_stable_before_reports`; HSV boundaries in `test_protocol.py` |
+| L09 | Picker metadata plus prior native bulb capability and validated reports preserve controls; DIY pickers do not acquire temperature support from placeholder d4; malformed HSV is rejected | `test_all_known_picker_capabilities_are_stable_before_reports`; HSV boundaries in `test_protocol.py` |
 | L10 | Diagnostics allowlist excludes account/device identifiers, names, keys, tokens and certificates | `test_diagnostics_excludes_account_identity_and_secrets` |
-| L11 | Preserve user text and HA overrides; remove only a proven factory series_deviceSn suffix | Name/factory-name cases and real registry rename/override assertions |
+| L11 | Preserve user text and HA overrides, including an existing friendly-name prefix when discovery adds an opaque suffix | Name/factory-name cases and real registry rename/override assertions |
 
 ## Packaging, dependencies and checks
 
@@ -79,3 +79,7 @@ Scorecard alerts against main may remain until merge and rescan. SAST is exercis
 Code Review/Maintained metrics and optional Fuzzing/CII program participation
 are not runtime defects; no history was rewritten, irrelevant workflow added,
 certification claimed, or alert dismissed to make a score look clean.
+
+## Follow-up after live startup failure
+
+See [startup regression coverage](STARTUP-REGRESSIONS.md) for the observed failures, APK dispatch evidence, reconstructed fixture provenance, upgrade tests and bounded GET recovery. The original MQTT payload was not captured; these server tests do not claim another successful live deployment.
