@@ -56,6 +56,7 @@ def verify(path: Path) -> None:
             "translations/en.json",
             "brand/icon.png",
             "_private/mqtt_client_key.pem",
+            "app_auth.py",
             "catalog.py",
             "scenes.py",
         }

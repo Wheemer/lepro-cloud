@@ -121,6 +121,9 @@ def _load_config_flow_module() -> Any:
     sys.modules.setdefault(
         "homeassistant.helpers", types.ModuleType("homeassistant.helpers")
     )
+    oauth2 = types.ModuleType("homeassistant.helpers.config_entry_oauth2_flow")
+    oauth2.AbstractOAuth2FlowHandler = ConfigFlow
+    sys.modules["homeassistant.helpers.config_entry_oauth2_flow"] = oauth2
     sys.modules["homeassistant.helpers.aiohttp_client"] = aiohttp_client
     sys.modules["homeassistant.helpers.selector"] = selector
     sys.modules["voluptuous"] = voluptuous

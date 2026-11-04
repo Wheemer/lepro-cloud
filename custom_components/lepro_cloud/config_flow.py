@@ -7,8 +7,8 @@ from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigFlow
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.helpers import config_entry_oauth2_flow as oauth2
 
 from .client import (
     LeproApi,
@@ -26,6 +26,15 @@ _LOGGER = logging.getLogger(__name__)
 def _account_unique_id(region: str, username: str) -> str:
     """Return the stable unique ID for a Lepro Cloud account."""
     return f"{region}:{username.lower()}"
+
+
+def _app_account_configured(hass: Any, api: LeproApi) -> bool:
+    """Prevent an app-authorized account being added again using a password."""
+    uid = getattr(api, "uid", None)
+    return bool(
+        uid
+        and hass.config_entries.async_entry_for_domain_unique_id(DOMAIN, f"app:{uid}")
+    )
 
 
 def _credentials_schema(*, username: str | None = None) -> vol.Schema:
@@ -65,12 +74,92 @@ def _log_api_error(error: LeproApiError) -> None:
     )
 
 
-class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
+class LeproCloudFlow(oauth2.AbstractOAuth2FlowHandler, domain=DOMAIN):
     """Handle a Lepro Cloud config flow."""
 
     VERSION = 1
+    DOMAIN = DOMAIN
+
+    @property
+    def logger(self) -> logging.Logger:
+        return _LOGGER
 
     async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Choose email/password or authorization through the Lepro app."""
+        if user_input is not None:
+            return await self.async_step_email(user_input)
+        return self.async_show_menu(step_id="user", menu_options=["email", "app"])
+
+    async def async_step_app(
+        self, user_input: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Start the vendor-owned app authorization handoff."""
+        if user_input is None:
+            return self.async_show_form(step_id="app", data_schema=vol.Schema({}))
+        from .app_auth import LeproAppOAuthImplementation
+
+        self.flow_impl = LeproAppOAuthImplementation(self.hass)
+        self.async_register_implementation(self.hass, self.flow_impl)
+        return await self.async_step_auth()
+
+    async def async_step_creation(
+        self, user_input: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Map vendor session errors without leaking callback credentials."""
+        try:
+            return await super().async_step_creation(user_input)
+        except LeproAuthError:
+            return self.async_abort(reason="invalid_auth")
+        except LeproApiError:
+            return self.async_abort(reason="cannot_connect")
+
+    async def async_oauth_create_entry(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Store app credentials and bind reauthentication to the same UID."""
+        token = data["token"]
+        uid = str(token["uid"])
+        unique_id = f"app:{uid}"
+        source = self.context.get("source")
+        entry = None
+        if source in {"reauth", "reconfigure"}:
+            entry = (
+                self._get_reauth_entry()
+                if source == "reauth"
+                else self._get_reconfigure_entry()
+            )
+            if str(entry.data.get("token", {}).get("uid") or "") != uid:
+                return self.async_abort(reason="wrong_account")
+        duplicate = await self.async_set_unique_id(unique_id)
+        if duplicate is not None and (
+            entry is None or duplicate.entry_id != entry.entry_id
+        ):
+            return self.async_abort(reason="already_configured")
+        account = token.get("account", "")
+        # Older email entries use the email/region ID, not the vendor UID.
+        if account:
+            legacy = self.hass.config_entries.async_entry_for_domain_unique_id(
+                DOMAIN, _account_unique_id(token["region"], account)
+            )
+            if legacy is not None and (
+                entry is None or legacy.entry_id != entry.entry_id
+            ):
+                return self.async_abort(reason="already_configured")
+        title = f"Lepro Cloud ({account})" if account else "Lepro Cloud"
+        stored = {**data, CONF_REGION: token["region"]}
+        if entry is not None:
+            return self.async_update_reload_and_abort(
+                entry,
+                unique_id=unique_id,
+                title=title,
+                data=stored,
+                reason="reauth_successful"
+                if source == "reauth"
+                else "reconfigure_successful",
+            )
+        return self.async_create_entry(title=title, data=stored)
+
+    async def async_step_email(
         self, user_input: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """Handle the initial setup step."""
@@ -88,6 +177,8 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
                 _log_api_error(err)
                 errors["base"] = _flow_error(err)
             else:
+                if _app_account_configured(self.hass, api):
+                    return self.async_abort(reason="already_configured")
                 await self.async_set_unique_id(_account_unique_id(region, username))
                 self._abort_if_unique_id_configured()
                 cache_authenticated_api(
@@ -103,7 +194,7 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
                 )
 
         return self.async_show_form(
-            step_id="user",
+            step_id="email",
             data_schema=_credentials_schema(),
             errors=errors,
         )
@@ -113,6 +204,8 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
     ) -> dict[str, Any]:
         """Handle reconfiguration from the config-entry Configure action."""
         entry = self._get_reconfigure_entry()
+        if entry.data.get("auth_implementation") == DOMAIN:
+            return await self.async_step_app(user_input)
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -126,6 +219,8 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
                 _log_api_error(err)
                 errors["base"] = _flow_error(err)
             else:
+                if _app_account_configured(self.hass, api):
+                    return self.async_abort(reason="already_configured")
                 unique_id = _account_unique_id(region, username)
                 duplicate_entry = await self.async_set_unique_id(unique_id)
                 if (
@@ -164,6 +259,8 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
     ) -> dict[str, Any]:
         """Confirm updated credentials and reload the existing entry."""
         entry = self._get_reauth_entry()
+        if entry.data.get("auth_implementation") == DOMAIN:
+            return await self.async_step_app(user_input)
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -183,6 +280,8 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
                 _log_api_error(err)
                 errors["base"] = _flow_error(err)
             else:
+                if _app_account_configured(self.hass, api):
+                    return self.async_abort(reason="already_configured")
                 unique_id = _account_unique_id(region, username)
                 duplicate_entry = await self.async_set_unique_id(unique_id)
                 if (
