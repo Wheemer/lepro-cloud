@@ -2,7 +2,7 @@
 
 All notable changes to Lepro Cloud are documented here.
 
-## v0.1.11
+## v0.2.0
 
 This release improves device controls, account recovery and connection reliability, and adds authorization through the Lepro app.
 
