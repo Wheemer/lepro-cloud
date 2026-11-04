@@ -8,6 +8,7 @@
   <a href="https://www.hacs.xyz/"><img src="https://img.shields.io/badge/HACS-DEFAULT-41BDF5?style=for-the-badge&logo=home-assistant&logoColor=white&labelColor=555555" alt="HACS"></a>
   <a href="https://www.home-assistant.io/"><img src="https://img.shields.io/badge/HOME%20ASSISTANT-2026.4%2B-41BDF5?style=for-the-badge&logo=home-assistant&logoColor=white&labelColor=555555" alt="Home Assistant 2026.4 or newer"></a>
   <a href="https://github.com/Wheemer/lepro-cloud/releases"><img src="https://img.shields.io/github/downloads/Wheemer/lepro-cloud/total?style=for-the-badge&label=DOWNLOADS&labelColor=555555&cacheSeconds=300&v=0.1.1" alt="GitHub release downloads"></a>
+  <a href="https://github.com/Wheemer/lepro-cloud/blob/main/LICENSE"><img src="https://img.shields.io/badge/LICENSE-MIT-22C55E?style=for-the-badge&labelColor=555555" alt="MIT License"></a>
 </p>
 
 Home Assistant custom integration for Lepro Wi-Fi cloud devices.
