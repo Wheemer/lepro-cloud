@@ -184,6 +184,8 @@ class LeproCloudLight(LightEntity):
     @property
     def effect(self) -> str | None:
         """Return the selected scene when its exact payload is reported."""
+        if self._work_mode != WORK_MODE_SCENE:
+            return None
         for name, (datapoint, value) in self._scene_effects.items():
             current = self.coordinator.states.get(self.device_id, {}).get(datapoint)
             if current == value:
@@ -284,6 +286,8 @@ class LeproCloudLight(LightEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the light on."""
+        if ATTR_EFFECT in kwargs and kwargs[ATTR_EFFECT] not in self._scene_effects:
+            raise ValueError("Unknown Lepro effect")
         values: dict[str, Any] = on_payload(True)
         brightness = kwargs.get(ATTR_BRIGHTNESS, self.brightness or 255)
         if ATTR_EFFECT in kwargs and kwargs[ATTR_EFFECT] in self._scene_effects:

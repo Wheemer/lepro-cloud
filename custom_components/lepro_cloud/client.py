@@ -329,6 +329,8 @@ class LeproCoordinator:
             return_exceptions=True,
         )
         for (did, device), result in zip(device_items, results, strict=True):
+            if isinstance(result, LeproAuthError):
+                raise result
             if isinstance(result, Exception):
                 _LOGGER.debug("Unable to load Lepro scenes for %s: %s", did, result)
                 continue
@@ -499,6 +501,8 @@ class LeproCoordinator:
             if len(parts) < 4 or parts[0] != "le" or parts[2] != "prp":
                 return
             did = parts[1]
+            if did not in self.devices or message.topic not in subscription_topics(did):
+                return
             payload = json.loads(message.payload.decode())
             state = payload.get("d", {})
         except (UnicodeDecodeError, json.JSONDecodeError, AttributeError):
@@ -510,8 +514,14 @@ class LeproCoordinator:
             # omits the separately requested online datapoint.
             if DP_ONLINE not in state and is_complete_standard_state(state):
                 state = {**state, DP_ONLINE: 1}
-            self.states.setdefault(did, {}).update(state)
-            self.hass.loop.call_soon_threadsafe(self._notify, did)
+            self.hass.loop.call_soon_threadsafe(self._apply_report, did, state)
+
+    def _apply_report(self, did: str, state: dict[str, Any]) -> None:
+        """Apply a broker report on Home Assistant's event loop."""
+        if self._stopping:
+            return
+        self.states.setdefault(did, {}).update(state)
+        self._notify(did)
 
     def _schedule_device_updates(self) -> None:
         """Schedule availability updates from the MQTT callback thread."""
@@ -545,13 +555,18 @@ class LeproCoordinator:
         self._stopping = True
         client = self.client
         self.client = None
-        if client:
-            await self.hass.async_add_executor_job(client.disconnect)
-            await self.hass.async_add_executor_job(client.loop_stop)
-        if self.tmp:
-            tmp = self.tmp
-            self.tmp = None
-            await self.hass.async_add_executor_job(tmp.cleanup)
+        self.connected = False
+        tmp = self.tmp
+        self.tmp = None
+        try:
+            if client:
+                try:
+                    await self.hass.async_add_executor_job(client.disconnect)
+                finally:
+                    await self.hass.async_add_executor_job(client.loop_stop)
+        finally:
+            if tmp:
+                await self.hass.async_add_executor_job(tmp.cleanup)
 
 
 def _mqtt_info(profile: Mapping[str, Any]) -> dict[str, Any]:

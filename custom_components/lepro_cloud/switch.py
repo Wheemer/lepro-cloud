@@ -202,6 +202,12 @@ class LeproCloudPlugIndicatorLightSwitch(LeproCloudPlugPowerMemorySwitch):
 
     _attr_name = "Indicator Light"
 
+    def __init__(
+        self, coordinator: LeproCoordinator, device_id: str, device: dict[str, Any]
+    ) -> None:
+        super().__init__(coordinator, device_id, device)
+        self._attr_unique_id = f"{DOMAIN}_{device_id}_indicator_light"
+
     @property
     def is_on(self) -> bool | None:
         value = self.coordinator.states.get(self.device_id, {}).get("d101")

@@ -181,6 +181,8 @@ def test_full_status_reply_marks_device_online_when_online_is_omitted() -> None:
     client_module = _load_client_module()
     coordinator = client_module.LeproCoordinator.__new__(client_module.LeproCoordinator)
     coordinator.states = {}
+    coordinator.devices = {"light-1": {"did": "light-1"}}
+    coordinator._stopping = False
     coordinator.hass = types.SimpleNamespace(loop=InlineLoop())
     notified: list[str] = []
     coordinator._notify = notified.append
@@ -192,3 +194,15 @@ def test_full_status_reply_marks_device_online_when_online_is_omitted() -> None:
     coordinator._on_message(None, None, message)
 
     assert coordinator.states["light-1"]["online"] == 1
+
+
+def test_unknown_device_and_topic_are_ignored() -> None:
+    module = _load_client_module()
+    coordinator = module.LeproCoordinator.__new__(module.LeproCoordinator)
+    coordinator.devices = {"known": {}}
+    coordinator.states = {}
+    for topic in ("le/unknown/prp/rpt", "le/known/prp/bogus"):
+        coordinator._on_message(None, None, types.SimpleNamespace(
+            topic=topic, payload=b'{"d":{"d1":1}}'
+        ))
+    assert coordinator.states == {}

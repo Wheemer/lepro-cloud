@@ -290,6 +290,7 @@ def test_p1_plug_exposes_and_controls_its_button_lock() -> None:
         if entity.device_id == "p1-1" and entity._attr_name == "Indicator Light"
     )
     indicator.hass = FakeHass()
+    assert len({entity._attr_unique_id for entity in entities}) == len(entities)
     assert indicator.is_on is None
     asyncio.run(indicator.async_turn_on())
     assert coordinator.commands[-1] == ("p1-1", {"d101": "100000000"})
@@ -434,6 +435,8 @@ def test_tb1_uses_app_supplied_multipart_scenes() -> None:
         },
     )
     assert entity.effect == "Aurora"
+    coordinator.states["light-1"]["d2"] = 0
+    assert entity.effect is None
 
 
 def test_striplight_uses_neonlight_scene_fallback() -> None:

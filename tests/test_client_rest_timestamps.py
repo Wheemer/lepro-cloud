@@ -409,5 +409,42 @@ async def _empty_async() -> None:
     return None
 
 
+def test_stop_cleans_loop_and_certificates_after_disconnect_error() -> None:
+    module = _load_client_module()
+    calls: list[str] = []
+
+    class Client:
+        def disconnect(self) -> None:
+            calls.append("disconnect")
+            raise RuntimeError("injected failure")
+
+        def loop_stop(self) -> None:
+            calls.append("loop_stop")
+
+    class Tmp:
+        def cleanup(self) -> None:
+            calls.append("cleanup")
+
+    class Hass:
+        async def async_add_executor_job(self, target: Any, *args: Any) -> Any:
+            return target(*args)
+
+    coordinator = module.LeproCoordinator.__new__(module.LeproCoordinator)
+    coordinator.hass = Hass()
+    coordinator.client = Client()
+    coordinator.tmp = Tmp()
+    coordinator.connected = True
+    try:
+        asyncio.run(coordinator.async_stop())
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("disconnect failure must remain visible")
+    assert calls == ["disconnect", "loop_stop", "cleanup"]
+    assert coordinator.client is None
+    assert coordinator.tmp is None
+    assert coordinator.connected is False
+
+
 async def _dummy_certs(_info: Any, _key: str, _password: str) -> dict[str, str]:
     return {}

@@ -84,7 +84,7 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
                 region = await _async_account_region(self.hass, username)
                 api = LeproApi(self.hass, region)
                 await api.async_login(username, password)
-            except LeproApiError as err:
+            except (LeproApiError, LeproAuthError) as err:
                 _log_api_error(err)
                 errors["base"] = _flow_error(err)
             else:
@@ -122,7 +122,7 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
                 region = await _async_account_region(self.hass, username)
                 api = LeproApi(self.hass, region)
                 await api.async_login(username, password)
-            except LeproApiError as err:
+            except (LeproApiError, LeproAuthError) as err:
                 _log_api_error(err)
                 errors["base"] = _flow_error(err)
             else:
@@ -173,7 +173,7 @@ class LeproCloudFlow(ConfigFlow, domain=DOMAIN):
                 region = await _async_account_region(self.hass, username)
                 api = LeproApi(self.hass, region)
                 await api.async_login(username, password)
-            except LeproApiError as err:
+            except (LeproApiError, LeproAuthError) as err:
                 _log_api_error(err)
                 errors["base"] = _flow_error(err)
             else:

@@ -147,6 +147,21 @@ def test_flow_error_distinguishes_response_failures() -> None:
     assert module._flow_error(module.LeproApiError("network down")) == "cannot_connect"
 
 
+def test_invalid_credentials_return_form_error(monkeypatch: Any) -> None:
+    module = _load_config_flow_module()
+    flow = module.LeproCloudFlow()
+    flow.hass = types.SimpleNamespace(data={})
+
+    async def invalid(*_args: Any) -> str:
+        raise module.LeproAuthError("Invalid credentials")
+
+    monkeypatch.setattr(module, "_async_account_region", invalid)
+    result = asyncio.run(flow.async_step_user(
+        {"username": "audit@example.invalid", "password": "invalid"}
+    ))
+    assert result["errors"] == {"base": "invalid_auth"}
+
+
 def test_log_api_error_includes_type_and_safe_message(caplog: Any) -> None:
     module = _load_config_flow_module()
 
