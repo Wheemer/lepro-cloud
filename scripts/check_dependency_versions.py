@@ -1,4 +1,4 @@
-"""Keep the runtime manifest and both dependency locks on the same Paho version."""
+"""Keep the HA minimum and hash-locked CI dependency compatible."""
 
 from __future__ import annotations
 
@@ -18,12 +18,20 @@ def paho_pin(path: Path) -> str:
 
 
 def check(root: Path = ROOT, *, sync: bool = False) -> None:
-    expected = paho_pin(root / "requirements-runtime.in")
-    for name in ("requirements-runtime.txt", "requirements-test.txt"):
-        if paho_pin(root / name) != expected:
-            raise ValueError(
-                f"{name} differs from requirements-runtime.in; regenerate the locks"
-            )
+    from packaging.requirements import Requirement
+
+    expected = (root / "requirements-runtime.in").read_text().strip()
+    requirement = Requirement(expected)
+    specifiers = list(requirement.specifier)
+    if (
+        requirement.name != "paho-mqtt"
+        or len(specifiers) != 1
+        or specifiers[0].operator != ">="
+    ):
+        raise ValueError("Runtime Paho must declare a minimum version")
+    locked = paho_pin(root / "requirements-test.txt").split("==", 1)[1]
+    if locked not in requirement.specifier:
+        raise ValueError("CI Paho lock is below the runtime minimum")
     path = root / "custom_components/lepro_cloud/manifest.json"
     manifest = json.loads(path.read_text())
     actual = [item for item in manifest["requirements"] if item.startswith("paho-mqtt")]
@@ -37,7 +45,7 @@ def check(root: Path = ROOT, *, sync: bool = False) -> None:
         path.write_text(json.dumps(manifest, indent=2) + "\n")
     elif actual != [expected]:
         raise ValueError(
-            "Manifest Paho differs from the tested locks; run scripts/check_dependency_versions.py --sync"
+            "Manifest Paho differs from the runtime minimum; run scripts/check_dependency_versions.py --sync"
         )
 
 
@@ -45,4 +53,4 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--sync", action="store_true")
     check(sync=parser.parse_args().sync)
-    print("Runtime and tested Paho versions match")
+    print("CI Paho satisfies the runtime minimum")

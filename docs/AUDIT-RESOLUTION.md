@@ -45,9 +45,10 @@ refer to `tests/real_ha_regressions.py` unless another file is named.
   2026.10.4, including actual Paho mutual TLS and startup GET-only checks.
 - Local `brand/icon.png` is included, decoded and served through the actual HA
   brands view without a CDN fallback. English translations match strings.json.
-- Paho is pinned to the stable upstream release 2.1.0. Runtime and CI locks use
-  package hashes. Dependency tests detect manifest/lock drift, including bot
-  updates that omit the HA manifest.
+- Paho declares the stable upstream minimum 2.1.0 as required by Home Assistant
+  for a shared dependency. CI dependencies remain hash-locked. Dependency tests
+  reject incompatible locks and manifest drift without raising the runtime
+  minimum when only the CI lock is updated. Real HA tests use HA-supplied Paho.
 - Pagination tests assert both collected results and requested cursors. Larger
   catalogs no longer silently stop at the old hundred-page limit.
 - Import stubs are restored after each lightweight test.

@@ -681,15 +681,16 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
             "Girls room",
         )
 
-    async def test_runtime_paho_matches_the_pinned_manifest(self):
+    async def test_runtime_paho_satisfies_the_manifest_minimum(self):
         from importlib.metadata import version
 
         manifest = json.loads(
             (Path(client.__file__).parent / "manifest.json").read_text()
         )
-        self.assertEqual(
-            manifest["requirements"], ["paho-mqtt==" + version("paho-mqtt")]
-        )
+        from packaging.requirements import Requirement
+
+        requirement = Requirement(manifest["requirements"][0])
+        self.assertIn(version("paho-mqtt"), requirement.specifier)
 
     async def test_partial_platform_forward_failure_unloads_already_added_entities(
         self,

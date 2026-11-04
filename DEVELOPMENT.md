@@ -59,16 +59,13 @@ create a GitHub release, publish assets to a release, or push tags.
 
 ## Dependency updates
 
-The runtime uses the stable Paho release pinned in `requirements-runtime.in`.
-The HA manifest, runtime installation lock and CI test lock must agree. CI checks
-that relationship so a bot cannot update only the tests while leaving the
-integration on a different version.
+Home Assistant manages the shared Paho dependency. The manifest declares the
+minimum version from requirements-runtime.in; CI checks its hash-locked test
+version satisfies that minimum. Isolated HA tests use each image's supplied Paho.
 
-CI and isolated test-image builds install with `--require-hashes`. To refresh
-the locks after reviewing a dependency update:
+CI installs test dependencies with --require-hashes. To refresh the CI lock:
 
 ```bash
-uv pip compile requirements-runtime.in --python-version 3.12 --generate-hashes -o requirements-runtime.txt
 uv pip compile requirements-test.in --python-version 3.12 --generate-hashes -o requirements-test.txt
 python scripts/check_dependency_versions.py --sync
 python -m pytest
