@@ -16,7 +16,9 @@
 
 </div>
 
-Control your Lepro devices alongside the rest of your home: adjust lighting, select saved effects, switch plugs, and use device state in dashboards and automations. Devices are discovered from your Lepro Home account, with state updates delivered through Lepro's cloud connection.
+Control your Lepro devices alongside the rest of your home: adjust lighting, select saved effects, switch plugs, and use device state in dashboards and automations. Devices are discovered from your Lepro account, with state updates delivered through Lepro's cloud connection.
+
+> **App compatibility:** This integration supports devices used with the newer **Lepro app**, not **Lepro LampUX**. LampUX devices use a separate Tuya-based platform and cannot be added to the newer Lepro app. For those devices, Lepro recommends [Smart Life](https://community.lepro.com/t/passaggio-da-lampux-a-lepro/147305), which can connect through Home Assistant's [Tuya integration](https://www.home-assistant.io/integrations/tuya/).
 
 ## Features
 
@@ -77,7 +79,7 @@ Requires **Home Assistant 2026.4.0 or newer**.
 
 ## Account Setup
 
-1. Add your devices to your account in **Lepro Home**.
+1. Add your devices to your account in the newer **Lepro app**.
 2. In Home Assistant, open **Settings → Devices & services → Add integration**.
 3. Search for **Lepro Cloud**.
 4. Choose a sign-in method and complete setup.
@@ -98,7 +100,7 @@ Devices appear under **Settings → Devices & services → Lepro Cloud** and can
 
 Open a light's controls and choose from its **Effect** selector. Compatible scenes and favourites saved in Lepro are loaded for that product family; the list can differ between devices.
 
-Create and edit patterns in Lepro Home, then select the saved patterns in Home Assistant. Brightness changes preserve supported running effects, including multipart patterns.
+Create and edit patterns in the Lepro app, then select the saved patterns in Home Assistant. Brightness changes preserve supported running effects, including multipart patterns.
 
 ### Connectivity and device settings
 
@@ -116,7 +118,7 @@ If a published release has not appeared yet, choose **Update information** from 
 
 ### A device is missing or unavailable
 
-Confirm the device is accessible in Lepro Home using the same account. Check Home Assistant's Lepro Cloud integration for connection or reauthentication messages. When reporting a discovery problem, include the product series and firmware version.
+Confirm the device is accessible in the Lepro app using the same account. Check Home Assistant's Lepro Cloud integration for connection or reauthentication messages. When reporting a discovery problem, include the product series and firmware version.
 
 ### Home Assistant asks you to sign in again
 
