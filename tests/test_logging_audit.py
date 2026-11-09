@@ -483,3 +483,15 @@ def test_downloaded_diagnostics_explains_verified_e1_classification_recovery():
     assert device["family_context_count"] == 1
     assert device["firmware"] == "2.3.18"
     assert all(secret not in json.dumps(result) for secret in (PRIVATE, DID, FID))
+
+
+@pytest.mark.parametrize(
+    "name", ["LeproError", "LeproAuthError", "LeproApiError", "LeproMqttError"]
+)
+def test_structured_errors_preserve_empty_exception_construction(name):
+    client = _load_module("client")
+    error = getattr(client, name)()
+    assert str(error) == ""
+    assert error.code is None and error.http_status is None
+    logs = _load_module("log_helpers")
+    assert logs.error_info(error)["reason"] == "no_vendor_code"

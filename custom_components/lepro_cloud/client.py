@@ -72,7 +72,7 @@ class LeproError(Exception):
 
     def __init__(
         self,
-        message: str,
+        message: str = "",
         *,
         code: int | None = None,
         http_status: int | None = None,
