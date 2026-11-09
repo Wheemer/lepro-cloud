@@ -130,6 +130,9 @@ class LeproCloudLight(LightEntity):
     def brightness(self) -> int | None:
         """Return brightness in Home Assistant scale."""
         state = self.coordinator.states.get(self.device_id, {})
+        if self._uses_pattern_white:
+            # DiyBaseFragment.H1 reads neon_bright, not ordinary d3/d5 fields.
+            return lepro_to_ha_brightness(state.get(DP_RGBIC_BRIGHTNESS))
         if self._work_mode == WORK_MODE_WHITE and DP_BRIGHTNESS in state:
             return lepro_to_ha_brightness(state[DP_BRIGHTNESS])
         if (
@@ -241,6 +244,19 @@ class LeproCloudLight(LightEntity):
         work_mode = self._work_mode
 
         supported = self.supported_color_modes
+        if self._uses_pattern_white:
+            # E1's RGB/white tab follows the native pattern (P1 versus P4);
+            # placeholder or legacy ordinary work modes do not select d4/d5.
+            if (
+                work_mode in (WORK_MODE_WHITE, WORK_MODE_COLOR, WORK_MODE_SCENE)
+                and self._uses_pattern_white
+                and parse_rgbic_white(
+                    self.coordinator.states.get(self.device_id, {}).get("d50")
+                )
+                is not None
+            ):
+                return ColorMode.COLOR_TEMP
+            return ColorMode.HS
         if work_mode == WORK_MODE_COLOR and ColorMode.HS in supported:
             return ColorMode.HS
         if work_mode == WORK_MODE_WHITE and ColorMode.COLOR_TEMP in supported:
@@ -356,7 +372,15 @@ class LeproCloudLight(LightEntity):
     @property
     def hs_color(self) -> tuple[float, float] | None:
         """Read eaves RGB scene colour or the ordinary d5 HSV value."""
-        if self._uses_native_pattern and self._work_mode == WORK_MODE_SCENE:
+        if self._uses_pattern_white or (
+            self._uses_native_pattern and self._work_mode == WORK_MODE_SCENE
+        ):
+            if self._work_mode not in (
+                WORK_MODE_WHITE,
+                WORK_MODE_COLOR,
+                WORK_MODE_SCENE,
+            ):
+                return None
             parsed = parse_rgbic_solid(
                 self.coordinator.states.get(self.device_id, {}).get("d50")
             )
@@ -369,7 +393,13 @@ class LeproCloudLight(LightEntity):
     def color_temp_kelvin(self) -> int | None:
         """Return color temperature from Lepro d4."""
         state = self.coordinator.states.get(self.device_id, {})
-        if self._uses_pattern_white and self._work_mode == WORK_MODE_SCENE:
+        if self._uses_pattern_white:
+            if self._work_mode not in (
+                WORK_MODE_WHITE,
+                WORK_MODE_COLOR,
+                WORK_MODE_SCENE,
+            ):
+                return None
             parsed = parse_rgbic_white(state.get("d50"))
             return parsed[0] if parsed is not None else None
         return lepro_temperature_to_kelvin(state.get(DP_TEMPERATURE))
@@ -457,8 +487,20 @@ class LeproCloudLight(LightEntity):
             else:
                 values.update(white_payload(brightness, kwargs[ATTR_COLOR_TEMP_KELVIN]))
         elif ATTR_BRIGHTNESS in kwargs:
-            # Keep an active RGBIC scene in d2=2; the official app changes only d52.
-            if self._work_mode in (WORK_MODE_SCENE, 3, 5):
+            if self._uses_pattern_white and self._work_mode in (
+                WORK_MODE_WHITE,
+                WORK_MODE_COLOR,
+            ):
+                # LightBaseActivity.setBrightness calls rgbicBright(mode=2).
+                # E1/PG1 RGB and white palettes never dim via d3/d4/d5.
+                values.update(
+                    {
+                        DP_WORK_MODE: WORK_MODE_SCENE,
+                        DP_RGBIC_BRIGHTNESS: level(effect=True),
+                    }
+                )
+            # Keep active scene/music/TV modes and their existing native pattern.
+            elif self._work_mode in (WORK_MODE_SCENE, 3, 5):
                 if self._work_mode == 3 and self._brightness_datapoint == DP_BRIGHTNESS:
                     raise ValueError(
                         "Brightness control in app music mode is unavailable for this product"

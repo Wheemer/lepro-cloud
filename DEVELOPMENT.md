@@ -72,3 +72,17 @@ python -m pytest
 ```
 
 Paho 2.1.0 is a normal upstream release; it is not a test build or prerelease.
+
+
+## E1 transport regression without Home Assistant
+
+With the test dependencies and OpenSSL installed, run:
+
+python tests/offline_e1_wire.py --work-dir /permanent/server/research
+
+This uses real HTTPS and Paho/mTLS over loopback fixture servers, while stubbing
+HA imports. It does not construct a Home Assistant instance or contact Lepro.
+Each invocation creates its own run directory. The optional --initial-mode
+argument accepts 0, 1 or 2; --reply-suffix accepts getr, rpt, setr or
+dsr/app/getr. The test checks initial state before sending colour, so a colour
+command cannot conceal an incorrect first brightness command.

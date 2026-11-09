@@ -119,7 +119,7 @@ def test_native_patterns_match_independent_apk_encoder_and_decoder_witnesses():
             assert protocol.parse_rgbic_white(row["payload"]) == (kelvin, 30)
 
 
-def test_native_white_command_and_stale_white_pattern_mode():
+def test_native_white_tab_follows_pattern_in_normal_palette_modes():
     light = _load_module("light")
     coordinator = FakeCoordinator()
     coordinator.states["light-1"] = {"d2": 2, "d53": 30}
@@ -135,8 +135,13 @@ def test_native_white_command_and_stale_white_pattern_mode():
     coordinator.states["light-1"].update(value)
     assert entity.color_mode == "color_temp"
     assert entity.color_temp_kelvin == 2700
+    # PaletteDIYEStringFragment.P1 selects white from P4, independent of
+    # ordinary mode placeholders. Music mode is a separate active page.
     coordinator.states["light-1"]["d2"] = 1
+    assert entity.color_mode == "color_temp"
+    coordinator.states["light-1"]["d2"] = 3
     assert entity.color_mode == "hs"
+    assert entity.color_temp_kelvin is None
 
 
 def test_fixed_native_lengths_do_not_take_unrelated_d53():
@@ -248,3 +253,45 @@ def test_tv_native_length_uses_apk_product_id_mapping(pid, length):
         profiles.pattern_length({"series": "STV1", "proId": pid}, {"d53": 999})
         == length
     )
+
+
+@pytest.mark.parametrize("mode", [0, 1, 2])
+def test_native_e1_state_and_dimming_ignore_ordinary_bulb_placeholders(mode):
+    light = _load_module("light")
+    co = FakeCoordinator()
+    co.states["light-1"] = {
+        "d1": 1,
+        "d2": mode,
+        "d3": 0,
+        "d4": 0,
+        "d5": "000000000000",
+        "d50": "N01:P10001FF0000F210001001EU3V3000640000E1;",
+        "d52": 500,
+        "d53": 30,
+    }
+    entity = light.LeproCloudLight(
+        co, "light-1", {"type": 1, "series": "E1-30", "_color_picker": "diyEaves"}
+    )
+    entity.hass = FakeHass()
+    assert entity.brightness == 128
+    assert entity.hs_color == (0.0, 100.0)
+    assert entity.color_mode == "hs"
+    assert entity.color_temp_kelvin is None
+    asyncio.run(entity.async_turn_on(brightness=128))
+    assert co.commands[-1][1] == {"d1": 1, "d2": 2, "d52": 502}
+    assert co.states["light-1"]["d52"] == 500
+
+
+@pytest.mark.parametrize("series,picker", [("T1", "rgbcw"), ("S2-5", "diy2")])
+def test_real_ordinary_white_page_still_uses_d3_d4(series, picker):
+    light = _load_module("light")
+    co = FakeCoordinator()
+    co.states["light-1"] = {"d2": 0, "d3": 600, "d4": 0, "d52": 500}
+    entity = light.LeproCloudLight(
+        co, "light-1", {"type": 1, "series": series, "_color_picker": picker}
+    )
+    entity.hass = FakeHass()
+    assert entity.brightness == 153
+    assert entity.color_mode == "color_temp"
+    asyncio.run(entity.async_turn_on(brightness=128))
+    assert co.commands[-1][1] == {"d1": 1, "d2": 0, "d3": 502, "d4": 0}

@@ -185,3 +185,203 @@ def test_e1_initial_mqtt_report_is_not_lost_across_entity_creation(
     for remove in entity.remove_callbacks:
         remove()
     assert not co.listeners
+
+
+def test_sparse_shared_record_cannot_replace_explicit_owning_family():
+    client = _load_module("client")
+    api = client.LeproApi.__new__(client.LeproApi)
+    api._request = AsyncMock(
+        side_effect=[
+            {"list": [{"fid": "owner"}, {"fid": "shared"}]},
+            {
+                "list": [
+                    {
+                        "did": "fixture",
+                        "type": 1,
+                        "control": 2,
+                        "series": "E1-30",
+                        "fid": "owner",
+                    }
+                ]
+            },
+            {"list": [{"did": "fixture"}]},
+            {"list": []},
+        ]
+    )
+
+    async def discover_and_get_scenes():
+        devices = await api.async_devices()
+        await api.async_device_scenes(devices[0])
+        return devices[0]
+
+    found = asyncio.run(discover_and_get_scenes())
+    assert found["fid"] == "owner"
+    assert found["_family_ids"] == ["owner", "shared"]
+    assert "/fid/owner/did/fixture/" in api._request.call_args.args[1]
+
+
+def test_explicit_owning_family_change_is_not_treated_as_sparse_metadata():
+    client = _load_module("client")
+    api = client.LeproApi.__new__(client.LeproApi)
+    api._request = AsyncMock(
+        side_effect=[
+            {"list": [{"fid": "old"}, {"fid": "new"}]},
+            {
+                "list": [
+                    {
+                        "did": "fixture",
+                        "type": 1,
+                        "control": 2,
+                        "series": "E1-30",
+                        "fid": "old",
+                    }
+                ]
+            },
+            {"list": [{"did": "fixture", "fid": "new"}]},
+        ]
+    )
+    devices = asyncio.run(api.async_devices())
+    assert devices[0]["fid"] == "new"
+
+
+def test_shared_discovery_uses_selected_context_instead_of_foreign_owner():
+    client = _load_module("client")
+    api = client.LeproApi.__new__(client.LeproApi)
+    api._request = AsyncMock(
+        side_effect=[
+            {"list": [{"fid": "shared-context"}]},
+            {
+                "list": [
+                    {
+                        "did": "fixture",
+                        "type": 1,
+                        "control": 2,
+                        "series": "E1-30",
+                        "fid": "foreign-owner",
+                    }
+                ]
+            },
+            {"list": []},
+        ]
+    )
+
+    async def run():
+        devices = await api.async_devices()
+        await api.async_device_scenes(devices[0])
+        return devices[0]
+
+    found = asyncio.run(run())
+    assert found["fid"] == "foreign-owner"
+    assert found["_family_ids"] == ["shared-context"]
+    assert "/fid/shared-context/did/fixture/" in api._request.call_args.args[1]
+
+
+def test_scene_refresh_queries_each_discovered_context_and_preserves_each_cache():
+    client = _load_module("client")
+    co = client.LeproCoordinator.__new__(client.LeproCoordinator)
+    calls = []
+    failure = set()
+
+    async def collect(device):
+        fid = device["_family_ids"][0]
+        calls.append(fid)
+        if fid in failure:
+            raise client.LeproApiError("fixture outage")
+        return [{"cid": 1 if fid == "one" else 2, "name": fid}]
+
+    co._collect_scene_pages = collect
+    device = {"did": "fixture", "fid": "foreign-owner", "_family_ids": ["one", "two"]}
+    assert len(asyncio.run(co._async_device_scenes(device))) == 2
+    assert calls == ["one", "two"]
+    failure.add("one")
+    assert len(asyncio.run(co._async_device_scenes(device))) == 2
+
+
+def test_denied_scene_context_does_not_erase_other_contexts():
+    client = _load_module("client")
+    co = client.LeproCoordinator.__new__(client.LeproCoordinator)
+
+    async def collect(device):
+        if device["_family_ids"] == ["denied"]:
+            raise client.LeproResponseError("fixture denied", code=-904)
+        return [{"cid": 2, "name": "Allowed", "_family_id": "allowed"}]
+
+    co._collect_scene_pages = collect
+    device = {"did": "fixture", "_family_ids": ["denied", "allowed"]}
+    assert asyncio.run(co._async_device_scenes(device)) == [
+        {"cid": 2, "name": "Allowed", "_family_id": "allowed"}
+    ]
+
+
+def test_first_scene_context_outage_does_not_prevent_other_context_discovery():
+    client = _load_module("client")
+    co = client.LeproCoordinator.__new__(client.LeproCoordinator)
+
+    async def collect(device):
+        if device["_family_ids"] == ["unavailable"]:
+            raise client.LeproApiError("fixture outage")
+        return [{"cid": 2, "name": "Available", "_family_id": "available"}]
+
+    co._collect_scene_pages = collect
+    device = {"did": "fixture", "_family_ids": ["unavailable", "available"]}
+    assert asyncio.run(co._async_device_scenes(device)) == [
+        {"cid": 2, "name": "Available", "_family_id": "available"}
+    ]
+
+
+def test_auth_failure_in_scene_context_is_not_hidden_as_optional_scene_outage():
+    client = _load_module("client")
+    co = client.LeproCoordinator.__new__(client.LeproCoordinator)
+
+    async def collect(device):
+        raise client.LeproAuthError("fixture expired")
+
+    co._collect_scene_pages = collect
+    with pytest.raises(client.LeproAuthError):
+        asyncio.run(
+            co._async_device_scenes({"did": "fixture", "_family_ids": ["one", "two"]})
+        )
+
+
+def test_removed_family_context_cache_is_discarded_after_successful_refresh():
+    client = _load_module("client")
+    co = client.LeproCoordinator.__new__(client.LeproCoordinator)
+    co._family_scene_cache = {("fixture", "removed"): [{"cid": 1, "name": "Removed"}]}
+
+    async def collect(device):
+        return [{"cid": 2, "name": "Current", "_family_id": "current"}]
+
+    co._collect_scene_pages = collect
+    result = asyncio.run(
+        co._async_device_scenes({"did": "fixture", "_family_ids": ["current"]})
+    )
+    assert result == [{"cid": 2, "name": "Current", "_family_id": "current"}]
+    assert ("fixture", "removed") not in co._family_scene_cache
+
+
+def test_distinct_same_cursor_scenes_from_two_families_are_not_overwritten():
+    client = _load_module("client")
+    co = client.LeproCoordinator.__new__(client.LeproCoordinator)
+
+    async def collect(device):
+        return [{"cid": 1, "name": device["_family_ids"][0]}]
+
+    co._collect_scene_pages = collect
+    scenes = asyncio.run(
+        co._async_device_scenes({"did": "fixture", "_family_ids": ["one", "two"]})
+    )
+    assert {scene["name"] for scene in scenes} == {"one", "two"}
+
+
+def test_identical_catalog_scene_from_two_families_is_not_duplicated():
+    client = _load_module("client")
+    co = client.LeproCoordinator.__new__(client.LeproCoordinator)
+
+    async def collect(device):
+        return [{"cid": 1, "name": "Same preset"}]
+
+    co._collect_scene_pages = collect
+    scenes = asyncio.run(
+        co._async_device_scenes({"did": "fixture", "_family_ids": ["one", "two"]})
+    )
+    assert len(scenes) == 1

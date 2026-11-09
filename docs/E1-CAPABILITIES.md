@@ -133,3 +133,61 @@ The exact report remains unconfirmed. No actual discovery response, entity
 attributes or debug log from Andy is available. These results eliminate
 specific remaining code-path differences; they do not prove a root cause from
 a single description or justify claiming the released E1 issue is solved.
+
+
+## Full discovery / MQTT transport follow-up
+
+See APK-COMMAND-AUDIT.md for the actual HTTPS plus Paho/mTLS loopback runs;
+this extends the earlier constructor-only evidence. Four state-topic variants
+each complete discovery, context-specific scene pages, initial GET, colour,
+brightness, favourite, off/on and report-driven readback without HA.
+
+A reproduced discovery defect was corrected: the old merge could replace the
+reported owner fid with a later sparse family's context, and scene lookup used
+that one field for all accounts. The APK instead supplies its selected family.
+Queries now follow retained discovery contexts, including a single shared
+context whose device reports another owner. Scoped cache and scene identities
+avoid cross-family replacement and preserve accessible favourites during an
+individual context failure.
+
+This establishes a missing-favourites cause in that discovery path, not the
+reporter's missing-colour/on-off-only cause. The complete wire fixture retains
+HS/CT controls throughout; no actual reporter payload has become available.
+
+
+## Source-level native state and brightness correction
+
+Further code tracing found a separate ordinary-bulb fallthrough in light.py.
+The E1/PG1 RGB-and-white palette uses native d50 plus d52, but the generic HA
+branches could prefer d3/d4/d5 when a report carried ordinary work mode0 or1.
+That could display an unrelated near-minimum brightness/white colour and send
+the ordinary white dimming command.
+
+The APK source chain is explicit:
+
+- DiyBaseFragment.H1 reads DpStatusData.neon_bright (d52), without selecting d3
+  or HSV value based on ordinary mode.
+- PaletteDIYEStringFragment.P1 chooses its RGB/white editor tab from the native
+  pattern's P1 versus P4/P3 marker.
+- LightBaseActivity.setBrightness's j/l callbacks use rgbicBright$default with
+  the work-mode default mask. The actual DEX default method supplies mode2.
+- AIotUtils.rgbicBright builds DpRGBicBrightValue, carrying d2 and d52.
+
+Corrected light.py uses the native state fields for this RGB/white-pattern
+profile and selects mode2/d52 for its brightness request instead of falling
+through to ordinary white/HSV commands. Products with a real ordinary CT page
+(such as S2 and T1) keep d3/d4 white handling. Active music/TV branches remain
+separate. Effect playback matching still requires scene mode2.
+
+The old source was run through the same actual HTTPS/Paho fixture pipeline
+without replacing the current checkout. With native red d50, d52=500 and
+zero-valued ordinary fields plus d2=0, it reported brightness1 and ordinary
+white mode. Dimming sent {d1:1,d2:0,d3:502,d4:0}. The corrected source reads
+native red and brightness128; its first dimming command is
+{d1:1,d2:2,d52:502}, matching the APK writer.
+
+This is a reproduced conditional runtime defect, not evidence that Andy's
+device sent that fixture. It explains a wrong state/dimming path if that
+combination occurs; it does not prove literal controls were missing in his UI.
+Before/after wire evidence and relevant DEX dumps are stored permanently on
+server under lepro-command-audit-2026-11-09.

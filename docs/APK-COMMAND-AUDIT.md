@@ -42,7 +42,7 @@ APK paths are relative to decompiled sources/com/lepro.
 | Token wrapping | uikit/utils/AESCipher.java | AES-CBC/PKCS7 plus Base64; retained |
 | Apple/app handoff | Existing app-authorization evidence | Signed HA state and app callback code; no session import; no fresh account test in this audit |
 | Families and shares | data/network/api/DeviceApi.java, family | GET /family/list/timestamp/{timestamp}; every returned family queried |
-| Devices | DeviceApi.java, device | GET /v3/device/list/fid/{fid}/timestamp/{timestamp}; owning fid retained |
+| Devices | DeviceApi.java, device | GET /v3/device/list/fid/{fid}/timestamp/{timestamp}; family discovery contexts retained for scene lookup |
 | Sparse duplicates | Family merge | Known type/series/control retained when absent in later record; explicit new values authoritative |
 | Product metadata | config.series resource and bundled config_response.json | All 70 bundled records checked; null or blank remote fields cannot erase a known colour profile |
 | Saved pages | DeviceApi.java, sceneList | Correct fid/did/cid/limit/timestamp route; cursors, identity and outage cache reviewed |
@@ -173,3 +173,56 @@ fallback, but those HA tests were deliberately not executed under the current
 restriction. They remain a required later validation before release.
 
 Follow-up: direct comparative path investigation in E1-CAPABILITIES.md records a further blank-picker downgrade and its correction. Actual reporter metadata remains unknown.
+
+
+## Discovery and MQTT wire follow-up
+
+The subsequent wire investigation corrected the earlier assumption that scene
+lookup always uses DeviceEntity.fid. RemoteRepository.deviceScenesList
+(RemoteRepository.java:3701–3725) reads LocalRepository.getLeproFid, the app's
+selected family context. A shared device can have a different owning fid.
+
+Discovery now retains all contexts that returned a device, keeps an explicitly
+reported owner fid from being overwritten by a sparse duplicate, and loads scene
+pages in each discovered context. One context's permission error or outage
+does not discard other accessible scenes. Cache entries are scoped by family;
+departed contexts are removed. Same cursor values from distinct families do
+not overwrite different scenes; identical catalog records are deduplicated.
+
+This fixes missing favourites under shared/multiple-family discovery. It is
+not proof of the original E1-30 on/off-only report.
+
+Transport validation uses tests/offline_e1_wire.py against loopback HTTPS and
+mutual-TLS MQTT fixture servers with actual Paho. The actual API/coordinator,
+query builder, message callback, entity command methods and report update path
+execute. Home Assistant imports are stubbed; no HomeAssistant object exists.
+
+All four APK subscriptions were exercised: rpt, getr, setr and dsr/app/getr.
+Each run covers discovery, product metadata, two scene contexts, startup GET,
+a c+d state envelope, colour command, command acknowledgement, delayed
+authoritative report, brightness-only change, favourite, off and bare on.
+Startup sends no SET; acknowledgement does not fabricate state.
+
+MqttConnection.m11435a and Topic.Sub confirm these four subscriptions.
+The comparative integration's prp/# subscription also hears set echoes, but
+the APK does not subscribe to prp/set as state. No such echo was added here.
+The comparative integration's actual MQTT callback was evaluated on the same
+captured fixture frames: it consumes getr/rpt, but ignores setr/dsr replies.
+Our additional state paths match the APK and do not explain lost controls.
+
+Reproduction command (with CI test dependencies and OpenSSL):
+python tests/offline_e1_wire.py --work-dir /permanent/research/path
+Use --reply-suffix rpt, setr or dsr/app/getr for the other paths.
+Each invocation creates a fresh run directory, binds only loopback sockets,
+uses generated fixture credentials and cleans up its transport threads/tasks.
+No real Lepro service, account or device is contacted.
+
+Server evidence: /root/codex-work/lepro-command-audit-2026-11-09/mqtt-wire.
+Comparative callback output: comparison/mqtt-callback-comparison.json.
+
+
+The E1 native-state follow-up in E1-CAPABILITIES.md corrects another earlier
+assumption: ordinary d2=0/1 branches must not select d3/d4/d5 for its native
+RGB/white palette. DEX confirms the palette brightness writer defaults to
+mode2/d52. The source correction was validated with a before/after wire fixture,
+not just entity constructors. It remains unconfirmed as the reporter's cause.

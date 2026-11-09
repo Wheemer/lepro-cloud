@@ -67,3 +67,9 @@ The packaged product fallback and complete ordinary bulb presets come from
 Lepro Home 1.0.9.269. Rhythm-mode parameter catalogs are not ordinary scenes.
 
 See [the command audit](APK-COMMAND-AUDIT.md) for model routing and native commands.
+
+
+Scene pages use the family context selected in the app:
+GET /v3/scene/list/fid/{family_context}/did/{did}/cid/{cursor}/limit/6/timestamp/{timestamp}.
+For shared devices this context need not equal DeviceEntity.fid. Discovery
+retains each accessible context; scene refresh/cache is scoped accordingly.

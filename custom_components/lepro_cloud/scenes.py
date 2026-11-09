@@ -103,5 +103,16 @@ def merge_scenes(*sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 None,
             )
             identity = identifier or json.dumps(scene, sort_keys=True)
+            if scene.get("_family_id") is not None:
+                identity = f"family:{scene['_family_id']}:{identity}"
             merged[identity] = scene
-    return list(merged.values())
+    # The same catalog entry can be supplied in multiple family contexts.
+    # Keep distinct scoped edits, but do not duplicate byte-identical records.
+    unique: dict[str, dict[str, Any]] = {}
+    for scene in merged.values():
+        content = json.dumps(
+            {key: value for key, value in scene.items() if key != "_family_id"},
+            sort_keys=True,
+        )
+        unique.setdefault(content, scene)
+    return list(unique.values())

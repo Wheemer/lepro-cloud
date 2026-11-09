@@ -152,7 +152,9 @@ def test_discovery_urls_use_unix_seconds(monkeypatch: Any) -> None:
     )
     api = _api(client_module, session)
 
-    assert asyncio.run(api.async_devices()) == [{"did": "device-1", "fid": "family-1"}]
+    assert asyncio.run(api.async_devices()) == [
+        {"did": "device-1", "fid": "family-1", "_family_ids": ["family-1"]}
+    ]
 
     assert session.requests[0]["url"].endswith("/family/list/timestamp/1720000000")
     assert session.requests[1]["url"].endswith(
