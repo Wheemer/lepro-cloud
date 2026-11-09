@@ -59,6 +59,7 @@ def verify(path: Path) -> None:
             "app_auth.py",
             "catalog.py",
             "capabilities.py",
+            "log_helpers.py",
             "scenes.py",
         }
         if not required <= names:

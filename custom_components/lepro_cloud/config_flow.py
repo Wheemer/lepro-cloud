@@ -9,6 +9,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.helpers import config_entry_oauth2_flow as oauth2
+from homeassistant.helpers import selector
 
 from .client import (
     LeproApi,
@@ -18,7 +19,8 @@ from .client import (
     LeproResponseError,
     cache_authenticated_api,
 )
-from .const import CONF_REGION, DOMAIN
+from .const import CONF_REGION, CONF_REGION_OVERRIDE, DOMAIN, REGIONS
+from .log_helpers import error_details, safe_region
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,7 +39,9 @@ def _app_account_configured(hass: Any, api: LeproApi) -> bool:
     )
 
 
-def _credentials_schema(*, username: str | None = None) -> vol.Schema:
+def _credentials_schema(
+    *, username: str | None = None, region_override: str = "auto"
+) -> vol.Schema:
     """Return the Lepro Cloud credentials form schema."""
     username_field = (
         vol.Required(CONF_USERNAME, default=username)
@@ -47,6 +51,21 @@ def _credentials_schema(*, username: str | None = None) -> vol.Schema:
     fields: dict[Any, Any] = {
         username_field: str,
         vol.Required(CONF_PASSWORD): str,
+        vol.Optional(
+            CONF_REGION_OVERRIDE, default=region_override
+        ): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    selector.SelectOptionDict(value=value, label=label)
+                    for value, label in (
+                        ("auto", "Automatic"),
+                        ("north_america", "North America"),
+                        ("europe", "Europe"),
+                        ("far_east", "Far East"),
+                    )
+                ]
+            )
+        ),
     }
     return vol.Schema(fields)
 
@@ -65,13 +84,40 @@ def _flow_error(error: LeproError) -> str:
     return "cannot_connect"
 
 
-def _log_api_error(error: LeproApiError) -> None:
-    """Log a safe config-flow diagnostic for a Lepro API error."""
+def _log_api_error(
+    error: LeproError,
+    *,
+    stage: str = "unknown",
+    region: str | None = None,
+    flow_step: str = "unknown",
+) -> None:
+    """Log only structured metadata and locally defined error descriptions."""
     _LOGGER.warning(
-        "Lepro Cloud config flow API error (%s): %s",
-        type(error).__name__,
-        str(error) or "no message",
+        "Lepro Cloud config flow API error: step=%s stage=%s %s",
+        flow_step,
+        stage,
+        error_details(error, region=region),
     )
+
+
+async def _resolve_login_region(hass: Any, username: str, override: str) -> str:
+    """Bypass bootstrap only for an explicitly selected allowlisted region."""
+    if override == "auto":
+        selected = await _async_account_region(hass, username)
+        _LOGGER.debug(
+            "Lepro server selection: mode=automatic region=%s", safe_region(selected)
+        )
+        return selected
+    if override not in REGIONS:
+        raise LeproResponseError("Unsupported regional server selection")
+    _LOGGER.debug(
+        "Lepro server selection: mode=override region=%s", safe_region(override)
+    )
+    return override
+
+
+def _override_data(override: str) -> dict[str, str]:
+    return {CONF_REGION_OVERRIDE: override} if override != "auto" else {}
 
 
 class LeproCloudFlow(oauth2.AbstractOAuth2FlowHandler, domain=DOMAIN):
@@ -110,9 +156,11 @@ class LeproCloudFlow(oauth2.AbstractOAuth2FlowHandler, domain=DOMAIN):
         """Map vendor session errors without leaking callback credentials."""
         try:
             return await super().async_step_creation(user_input)
-        except LeproAuthError:
+        except LeproAuthError as err:
+            _log_api_error(err, stage="app_authorization", flow_step="creation")
             return self.async_abort(reason="invalid_auth")
-        except LeproApiError:
+        except LeproApiError as err:
+            _log_api_error(err, stage="app_authorization", flow_step="creation")
             return self.async_abort(reason="cannot_connect")
 
     async def async_oauth_create_entry(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -169,12 +217,19 @@ class LeproCloudFlow(oauth2.AbstractOAuth2FlowHandler, domain=DOMAIN):
             username = user_input[CONF_USERNAME].strip()
             password = user_input[CONF_PASSWORD].strip()
 
+            override = user_input.get(CONF_REGION_OVERRIDE, "auto")
+            region = None
+            stage = "region_lookup" if override == "auto" else "server_override"
             try:
-                region = await _async_account_region(self.hass, username)
+                region = await _resolve_login_region(self.hass, username, override)
+                stage = "login"
                 api = LeproApi(self.hass, region)
                 await api.async_login(username, password)
+                actual_region = getattr(api, "region", None)
+                if actual_region in REGIONS:
+                    region = actual_region
             except (LeproApiError, LeproAuthError) as err:
-                _log_api_error(err)
+                _log_api_error(err, stage=stage, region=region, flow_step="email")
                 errors["base"] = _flow_error(err)
             else:
                 if _app_account_configured(self.hass, api):
@@ -190,12 +245,17 @@ class LeproCloudFlow(oauth2.AbstractOAuth2FlowHandler, domain=DOMAIN):
                         CONF_USERNAME: username,
                         CONF_PASSWORD: password,
                         CONF_REGION: region,
+                        **_override_data(override),
                     },
                 )
 
         return self.async_show_form(
             step_id="email",
-            data_schema=_credentials_schema(),
+            data_schema=_credentials_schema(
+                region_override=user_input.get(CONF_REGION_OVERRIDE, "auto")
+                if user_input
+                else "auto"
+            ),
             errors=errors,
         )
 
@@ -211,12 +271,21 @@ class LeproCloudFlow(oauth2.AbstractOAuth2FlowHandler, domain=DOMAIN):
         if user_input is not None:
             username = user_input[CONF_USERNAME].strip()
             password = user_input[CONF_PASSWORD].strip()
+            override = user_input.get(
+                CONF_REGION_OVERRIDE, entry.data.get(CONF_REGION_OVERRIDE, "auto")
+            )
+            region = None
+            stage = "region_lookup" if override == "auto" else "server_override"
             try:
-                region = await _async_account_region(self.hass, username)
+                region = await _resolve_login_region(self.hass, username, override)
+                stage = "login"
                 api = LeproApi(self.hass, region)
                 await api.async_login(username, password)
+                actual_region = getattr(api, "region", None)
+                if actual_region in REGIONS:
+                    region = actual_region
             except (LeproApiError, LeproAuthError) as err:
-                _log_api_error(err)
+                _log_api_error(err, stage=stage, region=region, flow_step="reconfigure")
                 errors["base"] = _flow_error(err)
             else:
                 if _app_account_configured(self.hass, api):
@@ -236,16 +305,31 @@ class LeproCloudFlow(oauth2.AbstractOAuth2FlowHandler, domain=DOMAIN):
                         title=f"Lepro Cloud ({username})",
                         reason="reconfigure_successful",
                         data={
-                            **entry.data,
+                            **{
+                                key: value
+                                for key, value in entry.data.items()
+                                if key != CONF_REGION_OVERRIDE
+                            },
                             CONF_USERNAME: username,
                             CONF_PASSWORD: password,
                             CONF_REGION: region,
+                            **_override_data(override),
                         },
                     )
 
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=_credentials_schema(username=entry.data[CONF_USERNAME]),
+            data_schema=_credentials_schema(
+                username=entry.data[CONF_USERNAME],
+                region_override=(
+                    user_input.get(
+                        CONF_REGION_OVERRIDE,
+                        entry.data.get(CONF_REGION_OVERRIDE, "auto"),
+                    )
+                    if user_input
+                    else entry.data.get(CONF_REGION_OVERRIDE, "auto")
+                ),
+            ),
             errors=errors,
         )
 
@@ -269,15 +353,36 @@ class LeproCloudFlow(oauth2.AbstractOAuth2FlowHandler, domain=DOMAIN):
             if username.casefold() != entry.data[CONF_USERNAME].strip().casefold():
                 return self.async_show_form(
                     step_id="reauth_confirm",
-                    data_schema=_credentials_schema(username=entry.data[CONF_USERNAME]),
+                    data_schema=_credentials_schema(
+                        username=entry.data[CONF_USERNAME],
+                        region_override=(
+                            user_input.get(
+                                CONF_REGION_OVERRIDE,
+                                entry.data.get(CONF_REGION_OVERRIDE, "auto"),
+                            )
+                            if user_input
+                            else entry.data.get(CONF_REGION_OVERRIDE, "auto")
+                        ),
+                    ),
                     errors={"base": "wrong_account"},
                 )
+            override = user_input.get(
+                CONF_REGION_OVERRIDE, entry.data.get(CONF_REGION_OVERRIDE, "auto")
+            )
+            region = None
+            stage = "region_lookup" if override == "auto" else "server_override"
             try:
-                region = await _async_account_region(self.hass, username)
+                region = await _resolve_login_region(self.hass, username, override)
+                stage = "login"
                 api = LeproApi(self.hass, region)
                 await api.async_login(username, password)
+                actual_region = getattr(api, "region", None)
+                if actual_region in REGIONS:
+                    region = actual_region
             except (LeproApiError, LeproAuthError) as err:
-                _log_api_error(err)
+                _log_api_error(
+                    err, stage=stage, region=region, flow_step="reauth_confirm"
+                )
                 errors["base"] = _flow_error(err)
             else:
                 if _app_account_configured(self.hass, api):
@@ -296,16 +401,31 @@ class LeproCloudFlow(oauth2.AbstractOAuth2FlowHandler, domain=DOMAIN):
                         unique_id=unique_id,
                         title=f"Lepro Cloud ({username})",
                         data={
-                            **entry.data,
+                            **{
+                                key: value
+                                for key, value in entry.data.items()
+                                if key != CONF_REGION_OVERRIDE
+                            },
                             CONF_USERNAME: username,
                             CONF_PASSWORD: password,
                             CONF_REGION: region,
+                            **_override_data(override),
                         },
                         reason="reauth_successful",
                     )
 
         return self.async_show_form(
             step_id="reauth_confirm",
-            data_schema=_credentials_schema(username=entry.data[CONF_USERNAME]),
+            data_schema=_credentials_schema(
+                username=entry.data[CONF_USERNAME],
+                region_override=(
+                    user_input.get(
+                        CONF_REGION_OVERRIDE,
+                        entry.data.get(CONF_REGION_OVERRIDE, "auto"),
+                    )
+                    if user_input
+                    else entry.data.get(CONF_REGION_OVERRIDE, "auto")
+                ),
+            ),
             errors=errors,
         )

@@ -1,5 +1,7 @@
 """Lepro Cloud integration setup."""
 
+import logging
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import Event, HomeAssistant
@@ -14,6 +16,9 @@ from .client import (
     take_authenticated_api,
 )
 from .const import DOMAIN, PLATFORMS
+from .log_helpers import error_summary, log_failure
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -28,11 +33,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         await coordinator.async_start()
     except LeproAuthError as err:
+        log_failure(
+            _LOGGER, logging.WARNING, "Lepro setup requires reauthentication", err
+        )
         await coordinator.async_stop()
-        raise ConfigEntryAuthFailed(str(err)) from err
+        raise ConfigEntryAuthFailed(error_summary(err)) from None
     except (LeproApiError, LeproMqttError) as err:
+        log_failure(_LOGGER, logging.DEBUG, "Lepro setup deferred", err)
         await coordinator.async_stop()
-        raise ConfigEntryNotReady(str(err)) from err
+        raise ConfigEntryNotReady(error_summary(err)) from None
     except BaseException:
         await coordinator.async_stop()
         raise
@@ -61,6 +70,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             EVENT_HOMEASSISTANT_STOP, async_stop_on_hass_shutdown
         )
     )
+    _LOGGER.debug(
+        "Lepro setup completed: devices=%s", len(getattr(coordinator, "devices", {}))
+    )
     return True
 
 
@@ -77,6 +89,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             cache_authenticated_api(
                 hass, entry.unique_id, coordinator.api, replace=False
             )
+    _LOGGER.debug(
+        "Lepro unload completed: platforms_unloaded=%s transport_stopped=%s",
+        unloaded,
+        unloaded,
+    )
     return unloaded
 
 

@@ -89,9 +89,10 @@ class RecordingSession:
         url: str,
         data: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        **kwargs: Any,
     ) -> FakeResponse:
         self.requests.append(
-            {"method": method, "url": url, "data": data, "headers": headers}
+            {"method": method, "url": url, "data": data, "headers": headers, **kwargs}
         )
         return self.responses.pop(0)
 
@@ -412,6 +413,9 @@ def test_coordinator_reuses_authenticated_api_without_second_login() -> None:
     coordinator.api = Api()
     coordinator.devices = {}
     coordinator.effect_types = {}
+    coordinator._stopping = False
+    coordinator._reauth_requested = False
+    coordinator._refresh_requested = asyncio.Event()
     coordinator._load_device_scenes = lambda: _empty_async()
     coordinator._resolve_certs = _dummy_certs
     coordinator._start_mqtt = lambda _info, _certs: None
@@ -451,8 +455,9 @@ def test_stop_cleans_loop_and_certificates_after_disconnect_error() -> None:
     coordinator.connected = True
     try:
         asyncio.run(coordinator.async_stop())
-    except RuntimeError:
-        pass
+    except module.LeproMqttError as err:
+        assert err.reason == "mqtt_shutdown_failed"
+        assert "injected failure" not in str(err)
     else:
         raise AssertionError("disconnect failure must remain visible")
     assert calls == ["disconnect", "loop_stop", "cleanup"]

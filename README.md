@@ -84,7 +84,7 @@ Requires **Home Assistant 2026.4.0 or newer**.
 
 ### Email address and password
 
-Use your **Lepro account email address and password**. The account's regional server is selected automatically.
+Use your **Lepro account email address and password**. Leave **Server region** on **Automatic**, or select North America, Europe or Far East if you need to override account-region detection. You can change this later through **Configure**.
 
 ### Sign in through the Lepro app
 

@@ -11,26 +11,29 @@
       },
       "reconfigure": {
         "title": "Update Lepro Cloud",
-        "description": "Update your Lepro Home account credentials. Lepro selects the account's regional server automatically.",
+        "description": "Use Automatic unless you need to override the regional server selected for your Lepro Home account.",
         "data": {
           "username": "Email address",
-          "password": "Password"
+          "password": "Password",
+          "region_override": "Server region (optional)"
         }
       },
       "reauth_confirm": {
         "title": "Reconnect Lepro Cloud",
-        "description": "Update your Lepro Home account credentials. Lepro selects the appropriate regional server automatically.",
+        "description": "Use Automatic unless you need to override the regional server selected for your Lepro Home account.",
         "data": {
           "username": "Email address",
-          "password": "Password"
+          "password": "Password",
+          "region_override": "Server region (optional)"
         }
       },
       "email": {
         "title": "Lepro Cloud",
-        "description": "Sign in with your Lepro Home account. Lepro selects the account's regional server automatically.",
+        "description": "Use Automatic unless you need to override the regional server selected for your Lepro Home account.",
         "data": {
           "username": "Email address",
-          "password": "Password"
+          "password": "Password",
+          "region_override": "Server region (optional)"
         }
       },
       "app": {

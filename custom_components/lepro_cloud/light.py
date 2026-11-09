@@ -29,7 +29,8 @@ from .capabilities import (
 from .catalog import BULB_PRESETS, PRODUCT_CONFIGS
 from .client import LeproCoordinator
 from .const import DOMAIN
-from .device import device_info, device_type, is_light, product_series
+from .device import device_info, is_light, product_series
+from .log_helpers import device_details, device_index, safe_picker, state_fields
 from .protocol import (
     DP_BRIGHTNESS,
     DP_COLOR,
@@ -77,14 +78,13 @@ async def async_setup_entry(
             continue
         entity = LeproCloudLight(coordinator, did, device)
         _LOGGER.debug(
-            "Lepro light setup: series=%s type=%s control=%s picker=%r "
+            "Lepro light setup: %s device=%s picker=%r "
             "supported_color_modes=%s state_fields=%s",
-            device.get("series"),
-            device_type(device),
-            device.get("control"),
-            resolved_picker(device, PRODUCT_CONFIGS),
+            device_details(device),
+            device_index(coordinator.devices, did),
+            safe_picker(resolved_picker(device, PRODUCT_CONFIGS)),
             sorted(str(mode) for mode in entity.supported_color_modes),
-            sorted(coordinator.states.get(did, {})),
+            state_fields(coordinator.states.get(did, {})),
         )
         entities.append(entity)
     async_add_entities(entities)

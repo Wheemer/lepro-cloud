@@ -6,6 +6,7 @@ DOMAIN = "lepro_cloud"
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.LIGHT, Platform.SWITCH]
 
 CONF_REGION = "region"
+CONF_REGION_OVERRIDE = "region_override"
 
 REGIONS = {
     "north_america": "api-na-iot.lepro.com",

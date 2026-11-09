@@ -37,6 +37,16 @@ from .device import (
     preserve_device_name,
     product_series,
 )
+from .log_helpers import (
+    device_details,
+    device_index,
+    error_details,
+    log_failure,
+    rest_operation,
+    safe_code,
+    safe_region,
+    state_fields,
+)
 from .mqtt_key import MqttKeyError, load_mqtt_private_key
 from .protocol import (
     DP_ONLINE,
@@ -58,7 +68,22 @@ MQTT_KEEPALIVE = 20
 
 
 class LeproError(Exception):
-    """Base class for Lepro integration errors."""
+    """Base error with safe, structured request diagnostics."""
+
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        code: int | None = None,
+        http_status: int | None = None,
+        region: str | None = None,
+        reason: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.http_status = http_status
+        self.region = region
+        self.reason = reason
 
 
 class LeproAuthError(LeproError):
@@ -72,9 +97,18 @@ class LeproApiError(LeproError):
 class LeproResponseError(LeproApiError):
     """Lepro cloud returned an application-level error."""
 
-    def __init__(self, message: str, *, code: int | None = None) -> None:
-        super().__init__(message)
-        self.code = code
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: int | None = None,
+        http_status: int | None = None,
+        region: str | None = None,
+        reason: str | None = None,
+    ) -> None:
+        super().__init__(
+            message, code=code, http_status=http_status, region=region, reason=reason
+        )
 
 
 class LeproMqttError(LeproError):
@@ -117,7 +151,21 @@ class LeproApi:
         for region, host in REGIONS.items():
             if host == api_host:
                 return region
-        raise LeproResponseError("Lepro returned an unknown account region")
+        raise LeproResponseError(
+            "Lepro returned an unknown account region",
+            code=0,
+            region=bootstrap.region,
+            http_status=getattr(bootstrap, "_last_http_status", None),
+            reason="unknown_region",
+        )
+
+    @property
+    def region(self) -> str:
+        """Identify the actual allowlisted destination without logging a URL."""
+        return next(
+            (region for region, host in REGIONS.items() if host == self._host),
+            "bootstrap" if self._host == REGION_DISCOVERY_HOST else "unknown",
+        )
 
     def _headers(self) -> dict[str, str]:
         headers = {
@@ -143,7 +191,34 @@ class LeproApi:
         _redirected: bool = False,
         json_body: bool = False,
     ) -> dict[str, Any]:
+        try:
+            return await self._request_impl(
+                method,
+                path,
+                data,
+                _redirected=_redirected,
+                json_body=json_body,
+            )
+        except LeproError as err:
+            if not _redirected:
+                _LOGGER.debug(
+                    "Lepro REST request failed: operation=%s %s",
+                    rest_operation(path),
+                    error_details(err, region=self.region),
+                )
+            raise
+
+    async def _request_impl(
+        self,
+        method: str,
+        path: str,
+        data: Mapping[str, Any] | None = None,
+        *,
+        _redirected: bool = False,
+        json_body: bool = False,
+    ) -> dict[str, Any]:
         url = f"https://{self._host}{path}"
+        status = None
         try:
             async with asyncio.timeout(REQUEST_TIMEOUT):
                 response = await self._session.request(
@@ -151,35 +226,99 @@ class LeproApi:
                     url,
                     **({"json": data} if json_body else {"data": data}),
                     headers=self._headers(),
+                    allow_redirects=False,
                 )
+                status = response.status
+                self._last_http_status = status
+                if 300 <= status < 400:
+                    raise LeproResponseError(
+                        "Lepro returned an unexpected HTTP redirect",
+                        http_status=status,
+                        region=self.region,
+                        reason="http_redirect_refused",
+                    )
                 try:
                     payload = await response.json(content_type=None)
                 except ValueError:
                     if response.status == 401:
-                        raise LeproAuthError("Lepro authentication expired") from None
+                        raise LeproAuthError(
+                            "Lepro authentication expired",
+                            http_status=401,
+                            region=self.region,
+                            reason="http_unauthorized",
+                        ) from None
                     raise
                 if response.status == 401:
-                    raise LeproAuthError("Lepro authentication expired")
-        except TimeoutError as err:
-            raise LeproApiError("Timed out connecting to Lepro Cloud") from err
+                    raise LeproAuthError(
+                        "Lepro authentication expired",
+                        code=parse_wire_integer(payload.get("code"))
+                        if isinstance(payload, dict)
+                        else None,
+                        http_status=401,
+                        region=self.region,
+                    )
+        except TimeoutError:
+            raise LeproApiError(
+                "Timed out connecting to Lepro Cloud",
+                region=self.region,
+                http_status=status,
+                reason="timeout",
+            ) from None
         except (ClientError, OSError, ValueError) as err:
-            raise LeproApiError("Lepro Cloud is unavailable") from err
+            raise LeproApiError(
+                "Lepro Cloud is unavailable",
+                region=self.region,
+                http_status=status,
+                reason="invalid_json"
+                if isinstance(err, ValueError)
+                else "network_error",
+            ) from None
 
         if not isinstance(payload, dict):
-            raise LeproApiError("Lepro Cloud returned an invalid response")
+            raise LeproApiError(
+                "Lepro Cloud returned an invalid response",
+                reason="invalid_response",
+                region=self.region,
+                http_status=status,
+            )
 
-        try:
-            code = int(payload["code"])
-        except (KeyError, TypeError, ValueError) as err:
-            raise LeproResponseError("Lepro response has no valid status code") from err
+        code = parse_wire_integer(payload.get("code"))
+        if code is None:
+            raise LeproResponseError(
+                "Lepro response has no valid status code",
+                reason="invalid_status_code",
+                region=self.region,
+                http_status=status,
+            )
         if code == -100 and not _redirected:
             region = payload.get("data")
             host = region.get("apiHost") if isinstance(region, dict) else None
             if host not in REGIONS.values():
-                raise LeproResponseError("Lepro returned an unknown account region")
+                raise LeproResponseError(
+                    "Lepro returned an unknown account region",
+                    reason="invalid_redirect",
+                    code=code,
+                    http_status=status,
+                    region=self.region,
+                )
+            previous_region = self.region
             self._host = host
+            _LOGGER.debug(
+                "Lepro REST region redirect: operation=%s from_region=%s to_region=%s",
+                rest_operation(path),
+                previous_region,
+                self.region,
+            )
             return await self._request(
                 method, path, data, _redirected=True, json_body=json_body
+            )
+        if code == -100:
+            raise LeproResponseError(
+                "Lepro account region redirect limit exceeded",
+                code=code,
+                http_status=status,
+                region=self.region,
+                reason="redirect_limit",
             )
         if response.status == 401 or code in (
             -202,
@@ -192,18 +331,36 @@ class LeproApi:
             1002,
         ):
             raise LeproAuthError(
-                "Lepro authentication expired or credentials were rejected"
+                "Lepro authentication expired or credentials were rejected",
+                code=code,
+                http_status=response.status,
+                region=self.region,
             )
         if response.status >= 500:
-            raise LeproApiError(f"Lepro Cloud API error (HTTP {response.status})")
+            raise LeproApiError(
+                "Lepro Cloud API error",
+                reason="server_error",
+                code=code,
+                http_status=response.status,
+                region=self.region,
+            )
         if response.status >= 400 or code != 0:
             raise LeproResponseError(
-                f"Lepro Cloud rejected the request (code {code})", code=code
+                f"Lepro Cloud rejected the request (code {code})",
+                code=code,
+                http_status=response.status,
+                region=self.region,
             )
 
         data_value = payload.get("data")
         if not isinstance(data_value, (dict, list)):
-            raise LeproResponseError("Lepro response has no valid data")
+            raise LeproResponseError(
+                "Lepro response has no valid data",
+                reason="invalid_data",
+                code=code,
+                http_status=status,
+                region=self.region,
+            )
         return (
             data_value if isinstance(data_value, dict) else {"list": data_value or []}
         )
@@ -335,10 +492,12 @@ class LeproApi:
             async with asyncio.timeout(REQUEST_TIMEOUT):
                 response = await self._session.get(url, headers={})
                 payload = await response.json(content_type=None)
-        except (ClientError, OSError, TimeoutError, ValueError) as err:
+        except (ClientError, OSError, TimeoutError, ValueError):
             raise LeproApiError(
-                "Unable to download Lepro product configuration"
-            ) from err
+                "Unable to download Lepro product configuration",
+                region=self.region,
+                reason="product_configuration_download",
+            ) from None
         if response.status >= 400:
             raise LeproApiError("Unable to download Lepro product configuration")
         if not isinstance(payload, list):
@@ -347,6 +506,8 @@ class LeproApi:
 
     async def async_text(self, url: str) -> str:
         """Download certificates, authenticating only the active HTTPS API origin."""
+        status = None
+        destination_region = "unknown"
         try:
             async with asyncio.timeout(REQUEST_TIMEOUT):
                 for _ in range(6):
@@ -358,26 +519,53 @@ class LeproApi:
                         and parsed.username is None
                         and parsed.password is None
                     )
+                    destination_region = self.region if trusted else "unknown"
                     response = await self._session.get(
                         url,
                         headers=self._headers() if trusted else {},
                         allow_redirects=False,
                     )
+                    status = response.status
                     if response.status in (301, 302, 303, 307, 308):
                         location = response.headers.get("Location")
                         response.release()
                         if not location:
-                            raise LeproApiError("Lepro certificate redirect is invalid")
+                            raise LeproApiError(
+                                "Lepro certificate redirect is invalid",
+                                http_status=status,
+                                region=destination_region,
+                                reason="invalid_redirect",
+                            )
                         url = urljoin(url, location)
                         if urlsplit(url).scheme not in ("http", "https"):
-                            raise LeproApiError("Lepro certificate redirect is invalid")
+                            raise LeproApiError(
+                                "Lepro certificate redirect is invalid",
+                                http_status=status,
+                                region=destination_region,
+                                reason="invalid_redirect",
+                            )
                         continue
                     if response.status >= 400:
-                        raise LeproApiError("Lepro certificate download failed")
+                        raise LeproApiError(
+                            "Lepro certificate download failed",
+                            http_status=status,
+                            region=destination_region,
+                            reason="certificate_download",
+                        )
                     return await response.text()
-                raise LeproApiError("Lepro certificate redirect limit exceeded")
+                raise LeproApiError(
+                    "Lepro certificate redirect limit exceeded",
+                    http_status=status,
+                    region=destination_region,
+                    reason="redirect_limit",
+                )
         except (ClientError, OSError, TimeoutError, ValueError):
-            raise LeproApiError("Unable to download Lepro MQTT certificate") from None
+            raise LeproApiError(
+                "Unable to download Lepro MQTT certificate",
+                http_status=status,
+                region=destination_region,
+                reason="certificate_download",
+            ) from None
 
 
 _PENDING_APIS = f"{DOMAIN}_pending_apis"
@@ -439,6 +627,8 @@ class LeproCoordinator:
         self._state_query_retries = 0
         self._property_messages = 0
         self._accepted_reports = 0
+        self._rejected_state_reports = 0
+        self._filtered_state_fields = 0
 
     async def async_start(self) -> None:
         """Authenticate, discover devices, and start MQTT."""
@@ -470,7 +660,7 @@ class LeproCoordinator:
         try:
             key = await self.hass.async_add_executor_job(load_mqtt_private_key)
         except MqttKeyError as err:
-            raise LeproMqttError(str(err)) from err
+            raise LeproMqttError(str(err)) from None
         certs = await self._resolve_certs(info, key, self.api.secret or "")
         await self._async_start_mqtt(info, certs)
         self._profile_signature = self._signature(info, certs)
@@ -491,7 +681,13 @@ class LeproCoordinator:
         try:
             remote_configs = await self.api.async_product_configs()
         except LeproApiError as err:
-            _LOGGER.debug("Unable to load Lepro effect configuration: %s", err)
+            log_failure(
+                _LOGGER,
+                logging.DEBUG,
+                "Lepro product configuration unavailable; retaining fallback",
+                err,
+                region=getattr(self.api, "region", None),
+            )
         else:
             merged = {str(item["series"]).upper(): item for item in configs}
             for item in remote_configs:
@@ -581,12 +777,26 @@ class LeproCoordinator:
             try:
                 await self._refresh_session()
                 delay = 300
-            except LeproAuthError:
+            except LeproAuthError as err:
+                log_failure(
+                    _LOGGER,
+                    logging.WARNING,
+                    "Lepro refresh requires reauthentication",
+                    err,
+                    region=getattr(self.api, "region", None),
+                )
                 await self._require_reauth()
                 return
-            except (LeproError, MqttKeyError, OSError, ValueError):
+            except (LeproError, MqttKeyError, OSError, ValueError) as err:
                 delay = min(300, max(30, delay * 2))
-                _LOGGER.debug("Lepro refresh failed; retrying with bounded backoff")
+                log_failure(
+                    _LOGGER,
+                    logging.DEBUG,
+                    "Lepro refresh failed",
+                    err,
+                    region=getattr(self.api, "region", None),
+                )
+                _LOGGER.debug("Lepro refresh retry scheduled: delay_seconds=%s", delay)
 
     async def _require_reauth(self) -> None:
         if self._reauth_requested or self._stopping:
@@ -683,7 +893,13 @@ class LeproCoordinator:
             if isinstance(result, LeproAuthError):
                 raise result
             if isinstance(result, Exception):
-                _LOGGER.debug("Unable to load Lepro scenes for %s: %s", did, result)
+                log_failure(
+                    _LOGGER,
+                    logging.DEBUG,
+                    "Lepro scene load failed; retaining cached scenes",
+                    result,
+                    device=device_index(getattr(self, "devices", {}), did),
+                )
                 result = getattr(self, "_scene_cache", {}).get(did, [])
             elif hasattr(self, "_scene_cache"):
                 self._scene_cache[did] = result
@@ -706,7 +922,7 @@ class LeproCoordinator:
         had_result = False
         failure: LeproApiError | None = None
         async with asyncio.timeout(120):
-            for fid in families:
+            for family_index, fid in enumerate(families, 1):
                 key = (str(device.get("did")), str(fid))
                 scoped = {**device, "_family_ids": [str(fid)]}
                 try:
@@ -719,15 +935,28 @@ class LeproCoordinator:
                 except LeproApiError as err:
                     if isinstance(err, LeproResponseError) and err.code == -904:
                         # A share can allow control without scene access.
-                        _LOGGER.debug(
-                            "Lepro scene access denied in one discovered family context"
+                        log_failure(
+                            _LOGGER,
+                            logging.DEBUG,
+                            "Lepro scene access denied",
+                            err,
+                            device=device_index(
+                                getattr(self, "devices", {}), str(device.get("did"))
+                            ),
+                            family=family_index,
                         )
                         cache.pop(key, None)
                         had_result = True
                         continue
-                    _LOGGER.debug(
-                        "Lepro scenes unavailable in one family context; "
-                        "retaining its last good scenes when available"
+                    log_failure(
+                        _LOGGER,
+                        logging.DEBUG,
+                        "Lepro family scenes unavailable; retaining cached scenes",
+                        err,
+                        device=device_index(
+                            getattr(self, "devices", {}), str(device.get("did"))
+                        ),
+                        family=family_index,
                     )
                     failure = err
                     if key not in cache:
@@ -774,19 +1003,27 @@ class LeproCoordinator:
     async def _resolve_certs(
         self, info: Mapping[str, Any], key: str, key_password: str
     ) -> dict[str, str]:
-        return {
-            "root": await self._resolve_cert_text(str(info["root"])),
-            "cert": await self._resolve_cert_text(str(info["cert"])),
-            "key": key,
-            "key_password": key_password,
-        }
+        resolved = {}
+        for role in ("root", "cert"):
+            try:
+                resolved[role] = await self._resolve_cert_text(str(info[role]))
+            except LeproError as err:
+                log_failure(
+                    _LOGGER,
+                    logging.DEBUG,
+                    f"Lepro MQTT {role} certificate resolution failed",
+                    err,
+                )
+                raise
+        return {**resolved, "key": key, "key_password": key_password}
 
     async def _resolve_cert_text(self, value: str) -> str:
         if value.startswith(("http://", "https://")):
             value = await self.api.async_text(value)
         if "-----BEGIN" not in value:
             raise LeproMqttError(
-                "Lepro MQTT profile did not provide PEM certificate data"
+                "Lepro MQTT profile did not provide PEM certificate data",
+                reason="invalid_mqtt_certificate",
             )
         return value
 
@@ -835,7 +1072,11 @@ class LeproCoordinator:
             self.tmp = tmp
             loop_result = client.loop_start()
             if loop_result not in (None, mqtt.MQTT_ERR_SUCCESS):
-                raise LeproMqttError("Lepro MQTT network loop could not start")
+                raise LeproMqttError(
+                    "Lepro MQTT network loop could not start",
+                    code=safe_code(loop_result),
+                    reason="mqtt_loop_start_failed",
+                )
             loop_started = True
         except Exception as err:
             self.client = None
@@ -847,9 +1088,16 @@ class LeproCoordinator:
                 with suppress(Exception):
                     client.disconnect()
             tmp.cleanup()
+            log_failure(
+                _LOGGER,
+                logging.DEBUG,
+                "Lepro MQTT setup failed",
+                err,
+                region=getattr(self.api, "region", None),
+            )
             if isinstance(err, LeproMqttError):
                 raise
-            raise LeproMqttError("Unable to connect to Lepro MQTT") from err
+            raise LeproMqttError("Unable to connect to Lepro MQTT") from None
 
         self.tmp = tmp
         self.client = client
@@ -874,22 +1122,23 @@ class LeproCoordinator:
             return
         if _reason_failed(reason_code):
             self._request_refresh()
-            _LOGGER.warning("Lepro MQTT connection failed: %s", reason_code)
+            _LOGGER.warning(
+                "Lepro MQTT connection failed: code=%s", safe_code(reason_code)
+            )
             self.hass.loop.call_soon_threadsafe(
                 self._set_transport_state, client, False
             )
             return
+        _LOGGER.debug(
+            "Lepro MQTT broker connected: account_region=%s devices=%s; awaiting device reports",
+            safe_region(getattr(getattr(self, "api", None), "region", None)),
+            len(self.devices),
+        )
         self.hass.loop.call_soon_threadsafe(self._set_transport_state, client, True)
-        for did, device in self.devices.items():
+        for did in self.devices:
             for topic in subscription_topics(did):
                 self._check_subscription(client.subscribe(topic, qos=0))
-            result = client.publish(
-                topic_get(did),
-                json.dumps(make_get_payload(self._state_query_datapoints(device))),
-                qos=0,
-            )
-            if result is not None and result.rc != mqtt.MQTT_ERR_SUCCESS:
-                _LOGGER.warning("Lepro MQTT initial state query failed")
+            if not self._publish_state_query(client, did):
                 self.hass.loop.call_soon_threadsafe(
                     self._set_transport_state, client, False
                 )
@@ -902,7 +1151,9 @@ class LeproCoordinator:
 
     def _check_subscription(self, result: Any) -> None:
         if result is not None and result[0] != mqtt.MQTT_ERR_SUCCESS:
-            _LOGGER.warning("Lepro MQTT subscription failed")
+            _LOGGER.warning(
+                "Lepro MQTT subscription queue failed: code=%s", safe_code(result[0])
+            )
             self.hass.loop.call_soon_threadsafe(
                 self._set_transport_state, self.client, False
             )
@@ -919,7 +1170,10 @@ class LeproCoordinator:
         if self._stopping or client is not self.client:
             return
         if any(_reason_failed(code) for code in reason_codes):
-            _LOGGER.warning("Lepro broker rejected a subscription")
+            _LOGGER.warning(
+                "Lepro broker rejected a subscription: codes=%s",
+                [safe_code(code) for code in reason_codes],
+            )
             self.hass.loop.call_soon_threadsafe(
                 self._set_transport_state, client, False
             )
@@ -967,7 +1221,14 @@ class LeproCoordinator:
                 self._initial_state_timer = self.hass.loop.call_later(
                     REQUEST_TIMEOUT, self._retry_missing_state, client, 1
                 )
+        changed = self.connected != connected
         self.connected = connected
+        if changed:
+            _LOGGER.debug(
+                "Lepro MQTT transport state: connected=%s devices=%s",
+                connected,
+                len(self.devices),
+            )
         self._notify_all()
 
     def device_available(self, did: str) -> bool:
@@ -990,7 +1251,8 @@ class LeproCoordinator:
         self.hass.loop.call_soon_threadsafe(self._set_transport_state, _client, False)
         if not self._stopping and _reason_failed(reason_code):
             _LOGGER.debug(
-                "Lepro MQTT disconnected; paho will reconnect: %s", reason_code
+                "Lepro MQTT disconnected; Paho will reconnect: code=%s",
+                safe_code(reason_code),
             )
 
     def _on_message(
@@ -1004,6 +1266,7 @@ class LeproCoordinator:
             parts = message.topic.split("/")
             payload = json.loads(message.payload.decode())
             if not isinstance(payload, dict):
+                _LOGGER.debug("Lepro MQTT message ignored: envelope_not_object")
                 return
             secret = getattr(getattr(self, "api", None), "secret", None)
             if secret and message.topic == f"le/{secret}/act/app/exe":
@@ -1018,6 +1281,9 @@ class LeproCoordinator:
             did = parts[1]
             if did not in self.devices or message.topic not in subscription_topics(did):
                 return
+            topic_kind = "/".join(
+                parts[3:]
+            )  # Already matched a fixed subscription suffix.
             self.hass.loop.call_soon_threadsafe(self._record_property_message)
             # APK MqttConnectionPool dispatches d-bearing messages as state,
             # regardless of c. Only c-only envelopes are command responses.
@@ -1029,28 +1295,68 @@ class LeproCoordinator:
                 return
             state = payload["d"]
         except (UnicodeDecodeError, json.JSONDecodeError, AttributeError):
-            _LOGGER.debug("Ignoring malformed Lepro MQTT message")
+            _LOGGER.debug("Lepro MQTT message ignored: invalid_json_or_topic")
             return
         if isinstance(state, dict):
             clean = _validated_state(state)
             if clean:
+                accepted_fields = state_fields(clean)
+                filtered = len(state) - len(clean)
                 clean = infer_report(
                     clean, get_response=parts[-1] == "getr" and did.isdigit()
                 )
+                if filtered:
+                    self.hass.loop.call_soon_threadsafe(
+                        self._record_report_filter, filtered, False
+                    )
+                    _LOGGER.debug(
+                        "Lepro MQTT report filtered: device=%s rejected_fields=%s accepted_datapoints=%s",
+                        device_index(getattr(self, "devices", {}), did),
+                        filtered,
+                        state_fields(clean),
+                    )
+                _LOGGER.debug(
+                    "Lepro MQTT report accepted: device=%s topic_kind=%s wire_datapoints=%s "
+                    "inferred_datapoints=%s effective_online=%s work_mode=%s",
+                    device_index(getattr(self, "devices", {}), did),
+                    topic_kind,
+                    accepted_fields,
+                    state_fields(set(clean) - set(accepted_fields)),
+                    clean.get(DP_ONLINE),
+                    clean.get("d2"),
+                )
                 self.hass.loop.call_soon_threadsafe(self._apply_report, did, clean)
+            else:
+                self.hass.loop.call_soon_threadsafe(
+                    self._record_report_filter, len(state), True
+                )
+                _LOGGER.debug(
+                    "Lepro MQTT report rejected: device=%s supported_datapoints=%s",
+                    device_index(getattr(self, "devices", {}), did),
+                    state_fields(state),
+                )
+        else:
+            self.hass.loop.call_soon_threadsafe(self._record_report_filter, 0, True)
+            _LOGGER.debug(
+                "Lepro MQTT report rejected: device=%s state_not_object",
+                device_index(getattr(self, "devices", {}), did),
+            )
 
     def _account_action(self, action: Any) -> None:
         if self._stopping:
             return
         if action == "logout":
+            _LOGGER.debug("Lepro account action: logout; requesting reauthentication")
             self.hass.async_create_task(self._require_reauth())
         elif action == "disDevice":
+            _LOGGER.debug("Lepro account action: device_discovery_refresh")
             self._request_refresh()
 
     def _command_response(self, did: str, identifier: Any, code: Any) -> None:
         identifier = parse_wire_integer(identifier)
         code = parse_wire_integer(code)
         if identifier is None or code is None:
+            _LOGGER.debug("Lepro command response ignored: invalid_identifier_or_code")
             return
         with self._command_lock:
             pending = self._pending_commands.get(identifier)
@@ -1058,8 +1364,18 @@ class LeproCoordinator:
                 return
             self._pending_commands.pop(identifier)
         if code != 0:
-            _LOGGER.warning("Lepro device rejected a command")
+            _LOGGER.warning(
+                "Lepro device rejected a command: device=%s code=%s %s",
+                device_index(getattr(self, "devices", {}), did),
+                code,
+                device_details(getattr(self, "devices", {}).get(did, {})),
+            )
             self._query_device(did)
+        else:
+            _LOGGER.debug(
+                "Lepro command response: device=%s code=0; awaiting authoritative state",
+                device_index(getattr(self, "devices", {}), did),
+            )
 
     def _state_query_datapoints(self, device: Mapping[str, Any]) -> tuple[str, ...]:
         """Use the same product-aware query for startup and recovery."""
@@ -1081,21 +1397,51 @@ class LeproCoordinator:
             extra += ("d52",)
         return state_datapoints_for_series(series, extra)
 
-    def _query_device(self, did: str) -> None:
-        if self.client and self.connected and did in self.devices:
-            self.client.publish(
+    def _publish_state_query(self, client: mqtt.Client, did: str) -> bool:
+        """Expose queue failure without logging topics or an external traceback."""
+        try:
+            datapoints = self._state_query_datapoints(self.devices[did])
+            result = client.publish(
                 topic_get(did),
-                json.dumps(
-                    make_get_payload(self._state_query_datapoints(self.devices[did]))
-                ),
+                json.dumps(make_get_payload(datapoints)),
                 qos=0,
             )
+        except Exception as err:  # noqa: BLE001 - never expose broker/library exception text
+            log_failure(
+                _LOGGER,
+                logging.WARNING,
+                "Lepro state query queue failed",
+                err,
+                device=device_index(self.devices, did),
+            )
+            return False
+        if result is not None and result.rc != mqtt.MQTT_ERR_SUCCESS:
+            _LOGGER.warning(
+                "Lepro state query queue rejected: device=%s code=%s",
+                device_index(self.devices, did),
+                safe_code(result.rc),
+            )
+            return False
+        _LOGGER.debug(
+            "Lepro state query queued: device=%s datapoints=%s",
+            device_index(self.devices, did),
+            state_fields(datapoints),
+        )
+        return True
+
+    def _query_device(self, did: str) -> None:
+        if self.client and self.connected and did in self.devices:
+            self._publish_state_query(self.client, did)
 
     def _expire_command(self, identifier: int) -> None:
         with self._command_lock:
             pending = self._pending_commands.pop(identifier, None)
         if pending is not None and not self._stopping:
             # ack=0 can legitimately omit setr; request authoritative state.
+            _LOGGER.debug(
+                "Lepro command response timeout: device=%s; requesting state",
+                device_index(getattr(self, "devices", {}), pending[0]),
+            )
             self._query_device(pending[0])
 
     def _schedule_command_timeout(self, identifier: int) -> None:
@@ -1113,6 +1459,16 @@ class LeproCoordinator:
     def _record_property_message(self) -> None:
         if not self._stopping:
             self._property_messages = getattr(self, "_property_messages", 0) + 1
+
+    def _record_report_filter(self, fields: int, rejected: bool) -> None:
+        """Count validation failures separately from ACKs and inferred fields."""
+        if not self._stopping:
+            self._filtered_state_fields = (
+                getattr(self, "_filtered_state_fields", 0) + fields
+            )
+            self._rejected_state_reports = getattr(
+                self, "_rejected_state_reports", 0
+            ) + int(rejected)
 
     def _apply_report(self, did: str, state: dict[str, Any]) -> None:
         """Apply a broker report on Home Assistant's event loop."""
@@ -1156,14 +1512,35 @@ class LeproCoordinator:
         message = json.dumps(payload, separators=(",", ":"))
         try:
             result = self.client.publish(topic_set(did), message, qos=0)
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001 - sanitize third-party errors before HA can log them
             with self._command_lock:
                 self._pending_commands.pop(payload["id"], None)
-            raise LeproMqttError("Lepro MQTT command could not be queued") from err
+            log_failure(
+                _LOGGER,
+                logging.DEBUG,
+                "Lepro MQTT command queue failed",
+                err,
+                device=device_index(getattr(self, "devices", {}), did),
+            )
+            raise LeproMqttError("Lepro MQTT command could not be queued") from None
         if result.rc != mqtt.MQTT_ERR_SUCCESS:
             with self._command_lock:
                 self._pending_commands.pop(payload["id"], None)
-            raise LeproMqttError(f"Lepro MQTT publish failed with code {result.rc}")
+            _LOGGER.warning(
+                "Lepro MQTT command publish failed: device=%s code=%s",
+                device_index(self.devices, did),
+                safe_code(result.rc),
+            )
+            raise LeproMqttError(
+                "Lepro MQTT publish failed",
+                code=safe_code(result.rc),
+                reason="mqtt_publish_failed",
+            )
+        _LOGGER.debug(
+            "Lepro command queued: device=%s datapoints=%s",
+            device_index(getattr(self, "devices", {}), did),
+            state_fields(values),
+        )
         self.hass.loop.call_soon_threadsafe(
             self._schedule_command_timeout, payload["id"]
         )
@@ -1205,13 +1582,47 @@ class LeproCoordinator:
             if client:
                 try:
                     await self.hass.async_add_executor_job(client.disconnect)
-                except OSError:
-                    _LOGGER.debug("Lepro MQTT disconnect failed during cleanup")
+                except Exception as err:  # noqa: BLE001 - sanitize transport cleanup errors
+                    log_failure(
+                        _LOGGER,
+                        logging.DEBUG,
+                        "Lepro MQTT disconnect cleanup failed",
+                        err,
+                    )
+                    if not isinstance(err, OSError):
+                        raise LeproMqttError(
+                            "Lepro MQTT disconnect failed",
+                            reason="mqtt_shutdown_failed",
+                        ) from None
                 finally:
-                    await self.hass.async_add_executor_job(client.loop_stop)
+                    try:
+                        await self.hass.async_add_executor_job(client.loop_stop)
+                    except Exception as err:  # noqa: BLE001 - sanitize before HA logs the failure
+                        log_failure(
+                            _LOGGER,
+                            logging.WARNING,
+                            "Lepro MQTT network loop shutdown failed",
+                            err,
+                        )
+                        raise LeproMqttError(
+                            "Lepro MQTT network loop shutdown failed",
+                            reason="mqtt_shutdown_failed",
+                        ) from None
         finally:
             if tmp:
-                await self.hass.async_add_executor_job(tmp.cleanup)
+                try:
+                    await self.hass.async_add_executor_job(tmp.cleanup)
+                except Exception as err:  # noqa: BLE001 - paths can contain private information
+                    log_failure(
+                        _LOGGER,
+                        logging.WARNING,
+                        "Lepro MQTT certificate cleanup failed",
+                        err,
+                    )
+                    raise LeproMqttError(
+                        "Lepro MQTT certificate cleanup failed",
+                        reason="mqtt_certificate_cleanup_failed",
+                    ) from None
             if not self._stopping:
                 self._notify_all()
 
@@ -1258,9 +1669,15 @@ def _validated_state(state: Mapping[str, Any]) -> dict[str, Any]:
 def _mqtt_info(profile: Mapping[str, Any]) -> dict[str, Any]:
     info = profile.get("mqtt")
     if not isinstance(info, dict):
-        raise LeproMqttError("Lepro profile did not return MQTT credentials")
+        raise LeproMqttError(
+            "Lepro profile did not return MQTT credentials",
+            reason="incomplete_mqtt_profile",
+        )
     if not all(info.get(key) for key in ("host", "port", "root", "cert")):
-        raise LeproMqttError("Lepro profile returned incomplete MQTT credentials")
+        raise LeproMqttError(
+            "Lepro profile returned incomplete MQTT credentials",
+            reason="incomplete_mqtt_profile",
+        )
     return info
 
 

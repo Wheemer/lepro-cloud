@@ -98,7 +98,11 @@ def _load_config_flow_module() -> Any:
                 and other.default == self.default
             )
 
+    class OptionalMarker(RequiredMarker):
+        pass
+
     voluptuous.Required = RequiredMarker
+    voluptuous.Optional = OptionalMarker
     voluptuous.In = lambda values: values
     voluptuous.Schema = lambda schema: schema
 
@@ -179,7 +183,7 @@ def test_invalid_credentials_return_form_error(monkeypatch: Any) -> None:
     assert result["errors"] == {"base": "invalid_auth"}
 
 
-def test_log_api_error_includes_type_and_safe_message(caplog: Any) -> None:
+def test_log_api_error_includes_type_without_unstructured_messages(caplog: Any) -> None:
     module = _load_config_flow_module()
 
     caplog.set_level(
@@ -188,7 +192,9 @@ def test_log_api_error_includes_type_and_safe_message(caplog: Any) -> None:
     module._log_api_error(module.LeproResponseError("Timestamp requires 10 digits"))
 
     assert "LeproResponseError" in caplog.text
-    assert "Timestamp requires 10 digits" in caplog.text
+    assert "Timestamp requires 10 digits" not in caplog.text
+    assert "code=None" in caplog.text
+    assert "stage=unknown" in caplog.text
     assert "username" not in caplog.text
     assert "password" not in caplog.text
     assert "token" not in caplog.text
@@ -252,7 +258,7 @@ def test_initial_schema_asks_for_credentials_only() -> None:
     module = _load_config_flow_module()
 
     fields = {field.key: field.default for field in module._credentials_schema()}
-    assert fields == {"username": None, "password": None}
+    assert fields == {"username": None, "password": None, "region_override": "auto"}
 
 
 def test_reconfigure_schema_prefills_username_only() -> None:
@@ -263,6 +269,7 @@ def test_reconfigure_schema_prefills_username_only() -> None:
     assert fields == {
         "username": "user@example.com",
         "password": None,
+        "region_override": "auto",
     }
 
 
@@ -322,6 +329,7 @@ def test_reconfigure_form_prefills_username_only() -> None:
     assert fields == {
         "username": "user@example.com",
         "password": None,
+        "region_override": "auto",
     }
 
 
@@ -492,4 +500,8 @@ def test_reauth_starts_confirmation_with_stored_username() -> None:
     assert result["type"] == "form"
     assert result["step_id"] == "reauth_confirm"
     fields = {field.key: field.default for field in result["data_schema"]}
-    assert fields == {"username": "user@example.com", "password": None}
+    assert fields == {
+        "username": "user@example.com",
+        "password": None,
+        "region_override": "auto",
+    }
