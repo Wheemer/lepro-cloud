@@ -256,9 +256,17 @@ class LeproApi:
                     device.setdefault("fid", fid)
                     key = str(did)
                     if key in devices:
-                        device["scenes"] = merge_scenes(
-                            devices[key].get("scenes", []), device.get("scenes", [])
+                        previous = devices[key]
+                        scenes = merge_scenes(
+                            previous.get("scenes", []), device.get("scenes", [])
                         )
+                        # Family listings can repeat a device with a sparse
+                        # record. Missing identity is not a type/series change.
+                        update = dict(device)
+                        for field in ("type", "deviceType", "devType", "series", "control"):
+                            if update.get(field) in (None, ""):
+                                update.pop(field, None)
+                        device = {**previous, **update, "scenes": scenes}
                     devices[key] = device
         return list(devices.values())
 

@@ -46,6 +46,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if getattr(coordinator, "devices", None) is not None:
             _reconcile_registry(hass, entry, coordinator)
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        if getattr(coordinator, "devices", None):
+            _remove_obsolete_primary_entities(hass, entry, coordinator)
     except BaseException:
         # MQTT has already started at this point. Do not leave the transport
         # running if a platform cannot be created and Home Assistant retries.
@@ -139,3 +141,33 @@ def _reconcile_registry(
                 if key in info
             },
         )
+
+
+def _remove_obsolete_primary_entities(
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: LeproCoordinator
+) -> None:
+    """Retire the previous domain only after its replacement is registered."""
+    from homeassistant.helpers import entity_registry as er
+
+    from .device import is_light, is_plug
+
+    entities = er.async_get(hass)
+    for did, device in coordinator.devices.items():
+        if is_light(device):
+            current_domain, current_uid = "light", f"{DOMAIN}_{did}"
+            old_domain, old_uid = "switch", f"{DOMAIN}_{did}_switch"
+        elif is_plug(device):
+            current_domain, current_uid = "switch", f"{DOMAIN}_{did}_switch"
+            old_domain, old_uid = "light", f"{DOMAIN}_{did}"
+        else:
+            continue
+        current_id = entities.async_get_entity_id(current_domain, DOMAIN, current_uid)
+        current = entities.async_get(current_id) if current_id else None
+        if current is None or current.config_entry_id != entry.entry_id:
+            continue
+        old_id = entities.async_get_entity_id(old_domain, DOMAIN, old_uid)
+        old = entities.async_get(old_id) if old_id else None
+        if old is not None and old.config_entry_id == entry.entry_id:
+            # Exact generated primary identity only: never remove settings,
+            # diagnostics, or another integration/account's registry entry.
+            entities.async_remove(old.entity_id)

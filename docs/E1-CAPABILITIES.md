@@ -31,3 +31,16 @@ AIOTDeviceType.java confirms LIGHT=1 and PLUG=2. MqttConnectionPool.java confirm
 With valid metadata and type=1, this path consistently advertises HS, including when d5 or brightness state is absent. Even the malformed-metadata case falls back to BRIGHTNESS, not ONOFF. Consequently, the metadata defect does not on its own reproduce complete on/off-only controls. A switch classification (type=2), a different installed build or frontend/entity context would be distinct possibilities, not established causes. There is no evidence to justify overriding Lepro's explicit device type or adding speculative MQTT commands.
 
 The reporter's exact symptom remains unresolved. Do not publish this as a confirmed fix for that symptom. The server-only evidence is retained in /root/codex-work/lepro-e1-regressions-2026-11-09.
+
+## Classification and upgrade follow-up
+
+Two additional regressions fail against the earlier implementation:
+
+1. Duplicate family discovery used the last record wholesale. A later record with null type and blank series erased the complete E1 identity and could remove the device from supported discovery. Preserve existing identity fields when the duplicate omits them; explicit type, control and series changes remain authoritative.
+2. A device previously registered as a plug switch kept that exact primary switch registration after discovery corrected its type to LIGHT. The correct light was created, but the stale switch remained available as a registry/dashboard reference. Remove only the obsolete primary unique ID owned by this entry, after the replacement domain is registered successfully. Retain it if replacement setup has not registered a new entity. Secondary settings, diagnostics and other integration/account registrations are not selected for deletion.
+
+The real HA upgrade regression starts with a constructed type=2 record (which both the APK and integration treat as a plug), unloads it, corrects discovery to type=1 and verifies that the stale switch is removed and an HS light is present. It then injects stale ONOFF capability metadata into the light registry and verifies reload replaces it with HS while preserving the light's user name and icon.
+
+The APK's HomeDeviceAdapter.java:868-872 routes item type 1 to launchCommonMain and type 2 to launchPlug. No historical integration revision inspected converts a type=1 E1 light into a switch; the primary switch path has consistently required type=2. The original integration's light class declared BRIGHTNESS, not ONOFF.
+
+These are reproduced discovery/upgrade defects and the stale-switch scenario can leave an on/off-only entity in the user's registry. The report does not establish that Andy had a duplicate record, an earlier type=2 record or a stale switch. Do not describe this as his confirmed root cause. No release is authorized by these tests.

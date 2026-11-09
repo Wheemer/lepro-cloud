@@ -979,6 +979,89 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
             self.co._signature(first, certs), self.co._signature(second, certs)
         )
 
+    async def test_duplicate_discovery_preserves_e1_identity_from_complete_record(self):
+        api = client.LeproApi.__new__(client.LeproApi)
+        api._request = AsyncMock(side_effect=[
+            {"list": [{"fid": "one"}, {"fid": "two"}]},
+            {"list": [{"did": "910030", "type": 1, "control": 2, "series": "E1-30"}]},
+            {"list": [{"did": "910030", "type": None, "series": ""}]},
+        ])
+        devices = await api.async_devices()
+        self.assertEqual(len(devices), 1)
+        self.assertTrue(is_supported_device(devices[0]))
+        self.assertEqual(devices[0]["series"], "E1-30")
+        self.assertEqual(devices[0]["type"], 1)
+        # An explicit new type is a real classification change, not missing data.
+        api._request = AsyncMock(side_effect=[
+            {"list": [{"fid": "one"}, {"fid": "two"}]},
+            {"list": [{"did": "910030", "type": 1, "control": 2, "series": "E1-30"}]},
+            {"list": [{"did": "910030", "type": 2, "series": "P1", "control": 3}]},
+        ])
+        devices = await api.async_devices()
+        self.assertEqual(devices[0]["type"], 2)
+        self.assertEqual(devices[0]["series"], "P1")
+        self.assertEqual(devices[0]["control"], 3)
+
+    async def test_e1_upgrade_replaces_stale_switch_registration(self):
+        hass = await self._prepare_platforms()
+        kwargs = {
+            "domain": "lepro_cloud", "title": "E1 classification upgrade",
+            "data": self.entry.data, "options": {}, "source": "user",
+            "unique_id": self.entry.unique_id, "version": 1, "minor_version": 1,
+            "discovery_keys": MappingProxyType({}), "subentries_data": [],
+        }
+        entry = ConfigEntry(**{
+            key: value for key, value in kwargs.items()
+            if key in inspect.signature(ConfigEntry).parameters
+        })
+        discovery_type = 2
+
+        async def start(co):
+            co.devices = {"e1": {
+                "did": "e1", "type": discovery_type, "control": 2,
+                "series": "E1-30", "name": "Eaves", "_color_picker": "diyEaves",
+            }}
+            co.connected = True
+            co._fresh = {"e1"}
+            co.states = {"e1": {"online": 1, "d1": 1, "d2": 2, "d52": 500}}
+
+        with patch.object(client.LeproCoordinator, "async_start", start):
+            await hass.config_entries.async_add(entry)
+            await hass.async_block_till_done()
+            registry = entity_registry.async_get(hass)
+            before = entity_registry.async_entries_for_config_entry(registry, entry.entry_id)
+            old_switch = next(item for item in before if item.domain == "switch")
+            self.assertEqual(hass.states.get(old_switch.entity_id).state, "on")
+            old_coordinator = entry.runtime_data
+            self.assertTrue(await hass.config_entries.async_unload(entry.entry_id))
+            # Keep the old registration if replacement setup has not succeeded.
+            from custom_components.lepro_cloud import _remove_obsolete_primary_entities
+
+            old_coordinator.devices["e1"]["type"] = 1
+            _remove_obsolete_primary_entities(hass, entry, old_coordinator)
+            self.assertIsNotNone(registry.async_get(old_switch.entity_id))
+            discovery_type = 1
+            self.assertTrue(await hass.config_entries.async_setup(entry.entry_id))
+            await hass.async_block_till_done()
+            after = entity_registry.async_entries_for_config_entry(registry, entry.entry_id)
+            self.assertIsNone(registry.async_get(old_switch.entity_id))
+            self.assertEqual({item.domain for item in after}, {"light", "binary_sensor"})
+            light_id = next(item.entity_id for item in after if item.domain == "light")
+            self.assertEqual(hass.states.get(light_id).attributes["supported_color_modes"], ["hs"])
+            # Stale capability metadata must not survive another upgrade/reload.
+            self.assertTrue(await hass.config_entries.async_unload(entry.entry_id))
+            registry.async_update_entity(
+                light_id, capabilities={"supported_color_modes": ["onoff"]},
+                name="Garden lights", icon="mdi:outdoor-lamp",
+            )
+            self.assertTrue(await hass.config_entries.async_setup(entry.entry_id))
+            await hass.async_block_till_done()
+            self.assertEqual(hass.states.get(light_id).attributes["supported_color_modes"], ["hs"])
+            self.assertEqual(registry.async_get(light_id).capabilities["supported_color_modes"], ["hs"])
+            self.assertEqual(registry.async_get(light_id).name, "Garden lights")
+            self.assertEqual(registry.async_get(light_id).icon, "mdi:outdoor-lamp")
+            self.assertTrue(await hass.config_entries.async_unload(entry.entry_id))
+
     async def test_e1_valid_metadata_survives_discovery_partial_reports_and_reload(self):
         hass = await self._prepare_platforms()
         kwargs = {
