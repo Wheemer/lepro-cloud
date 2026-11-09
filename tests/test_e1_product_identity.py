@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -116,7 +119,8 @@ def test_legacy_numeric_pid_alias_and_unknown_ids_are_bounded():
     assert device.apk_product_series({"proId": True}) is None
     assert device.apk_product_series({"proId": 68.5}) is None
     assert device.apk_product_series({"proId": 999}) is None
-    assert not device.is_light({"proId": 68, "type": 2, "control": 3})
+    assert device.is_light({"proId": 68, "type": 2, "control": 3})
+    assert not device.is_plug({"proId": 68, "type": 2, "control": 3})
     assert not device.is_supported_device({"proId": 68, "type": 3, "control": 3})
 
 
@@ -149,3 +153,155 @@ def test_changed_product_identity_refreshes_profile_before_more_commands():
     co._schedule_reload = Mock()
     asyncio.run(co._refresh_session())
     co._schedule_reload.assert_called_once()
+
+
+def test_reclassified_e1_retires_old_switch_only_after_light_registration(monkeypatch):
+    device = _load_module("device")
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "custom_components/lepro_cloud/__init__.py"
+    ).read_text()
+    node = next(
+        item
+        for item in ast.parse(source).body
+        if isinstance(item, ast.FunctionDef)
+        and item.name == "_remove_obsolete_primary_entities"
+    )
+    entries = {
+        "switch.old": SimpleNamespace(entity_id="switch.old", config_entry_id="entry"),
+    }
+    registered_light = []
+    removed = []
+
+    class Registry:
+        def async_get_entity_id(self, domain, platform, unique_id):
+            if domain == "light":
+                return registered_light[0] if registered_light else None
+            return "switch.old" if unique_id == "lepro_cloud_123_switch" else None
+
+        def async_get(self, entity_id):
+            return entries.get(entity_id)
+
+        def async_remove(self, entity_id):
+            removed.append(entity_id)
+            entries.pop(entity_id)
+
+    registry = Registry()
+    fake_er = SimpleNamespace(async_get=lambda hass: registry)
+    monkeypatch.setitem(sys.modules, "homeassistant.helpers.entity_registry", fake_er)
+    monkeypatch.setattr(
+        sys.modules["homeassistant.helpers"], "entity_registry", fake_er, raising=False
+    )
+    ns = {
+        "__package__": "custom_components.lepro_cloud",
+        "DOMAIN": "lepro_cloud",
+        "HomeAssistant": object,
+        "ConfigEntry": object,
+        "LeproCoordinator": object,
+    }
+    # Execute only the checked-out cleanup function; do not import/start HA.
+    exec(  # noqa: S102
+        compile(ast.Module(body=[node], type_ignores=[]), "registry-cleanup", "exec"),
+        ns,
+    )
+    cleanup = ns["_remove_obsolete_primary_entities"]
+    co = SimpleNamespace(devices={"123": {"type": 2, "proId": 68, "control": 3}})
+    assert device.is_light(co.devices["123"])
+    entry = SimpleNamespace(entry_id="entry")
+    cleanup(None, entry, co)
+    assert removed == []
+    entries["light.new"] = SimpleNamespace(
+        entity_id="light.new", config_entry_id="entry"
+    )
+    registered_light.append("light.new")
+    cleanup(None, entry, co)
+    assert removed == ["switch.old"]
+    assert "light.new" in entries
+
+
+@pytest.mark.parametrize("product_id", [68, 115])
+@pytest.mark.parametrize("types", [(2,), (1, 2), (2, 1)])
+def test_conflicting_type_through_discovery_and_platform_setup(product_id, types):
+    client = _load_module("client")
+    light = _load_module("light")
+    switch = _load_module("switch")
+    device = _load_module("device")
+    api = client.LeproApi.__new__(client.LeproApi)
+    api._request = AsyncMock(
+        side_effect=[
+            {"list": [{"fid": str(i)} for i in range(len(types))]},
+            *[
+                {
+                    "list": [
+                        {
+                            "did": "123",
+                            "type": value,
+                            "control": 3,
+                            "proId": product_id,
+                            "series": "D1",
+                        }
+                    ]
+                }
+                for value in types
+            ],
+        ]
+    )
+    api.async_product_configs = AsyncMock(return_value=[])
+
+    async def run():
+        co = client.LeproCoordinator.__new__(client.LeproCoordinator)
+        co.api = api
+        co.devices = {
+            item["did"]: item
+            for item in await api.async_devices()
+            if device.is_supported_device(item)
+        }
+        co.states = {"123": {"d1": 1, "d2": 2, "d52": 500, "d53": 30}}
+        co.effect_types = {}
+        co.command = Mock()
+        await co._load_product_configs()
+        lights, switches = [], []
+        entry = SimpleNamespace(runtime_data=co)
+        await light.async_setup_entry(None, entry, lambda es: lights.extend(es))
+        await switch.async_setup_entry(None, entry, lambda es: switches.extend(es))
+        assert len(lights) == 1 and switches == []
+        assert co.devices["123"]["type"] == types[-1]
+        assert device.device_type(co.devices["123"]) == 1
+        entity = lights[0]
+        assert entity.supported_color_modes == {"hs", "color_temp"}
+        assert entity._attr_unique_id == "lepro_cloud_123"
+        assert {"d50", "d52", "d53"} <= set(
+            co._state_query_datapoints(co.devices["123"])
+        )
+        entity.hass = FakeHass()
+        await entity.async_turn_on(hs_color=(120, 100), brightness=255)
+        assert co.command.call_args.args == (
+            "123",
+            {"d1": 1, "d2": 2, "d50": GREEN, "d52": 1000},
+        )
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("field", ["type", "deviceType", "devType"])
+def test_verified_product_classification_handles_type_aliases(field):
+    device = _load_module("device")
+    raw = {field: "2", "proId": 115, "control": 3}
+    assert device.is_light(raw)
+    assert not device.is_plug(raw)
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"proId": 77, "series": "E1-30"},
+        {"proId": 999, "series": "E1-30"},
+        {"series": "E1-30"},
+        {"name": "E1-30"},
+    ],
+)
+def test_unverified_e1_label_does_not_turn_real_plug_into_light(metadata):
+    device = _load_module("device")
+    raw = {"type": 2, "control": 3, **metadata}
+    assert device.is_plug(raw)
+    assert not device.is_light(raw)

@@ -319,3 +319,23 @@ mqtt-wire/product-115-wrong-series.log in the command-audit research directory.
 
 This fixes the reproduced recognition gap. It does not prove which discovery
 record Andy received or establish physical operation on his device.
+
+### Conflicting plug classification for verified E1 hardware
+
+Product IDs 68/115 now take precedence specifically over a reported plug
+type 2. Raw discovery fields remain intact, but device_type resolves the
+verified E1 to LIGHT before platform selection. This prevents a later family
+record from turning that hardware into an on/off-only plug entity. Explicit
+camera/unsupported types remain excluded, and a model name without a verified
+product ID does not override a real plug classification.
+
+Regression tests run actual discovery, startup filtering, product loading,
+light and switch platform setup, native queries and a native colour command.
+They cover both IDs, single conflicting records, both family orders and type
+aliases. Exactly one HS/CT light is created and no plug switch. The actual
+registry-cleanup function is separately exercised with a stub registry:
+old switch removal waits for successful replacement light registration.
+No Home Assistant instance is started for any of these checks.
+
+This repairs the constructed on/off-only platform reproduction. Andy's actual
+discovery response remains unavailable, so his real-world cause is not claimed.
