@@ -217,26 +217,32 @@ def test_eaves_native_encoder_fixtures_and_solid_decoder():
     fixtures = json.loads(
         (Path(__file__).parent / "fixtures/e1_native_colours.json").read_text()
     )
-    for hs, fixture in zip([(0, 100), (120, 100), (240, 100), (0, 0)], fixtures, strict=True):
-        values = protocol.eaves_colour_payload(hs, 502, 30)
+    for hs, fixture in zip(
+        [(0, 100), (120, 100), (240, 100), (0, 0)], fixtures, strict=True
+    ):
+        values = protocol.rgbic_colour_payload(hs, 502, 30)
         assert values == {"d2": 2, "d50": fixture["payload"], "d52": 502}
-        assert protocol.parse_eaves_solid(fixture["payload"]) == (hs, 30)
+        assert protocol.parse_rgbic_solid(fixture["payload"]) == (hs, 30)
     # Length is device-specific; never assume a fixed strip length.
-    assert "003C" in protocol.eaves_colour_payload((120, 100), 500, 60)["d50"]
+    assert "003C" in protocol.rgbic_colour_payload((120, 100), 500, 60)["d50"]
 
 
 def test_eaves_decoder_rejects_non_solid_incomplete_or_white_channel_patterns():
     fixture = "N01:P10001FF0000F210001001EU3V3000640000E1;"
     for value in (
-        None, {}, "", fixture[:-1], fixture + "garbage",
+        None,
+        {},
+        "",
+        fixture[:-1],
+        fixture + "garbage",
         fixture.replace("001E", "0000"),
         fixture.replace("P1", "P4"),
         fixture.replace("E1;", "E4;"),
         fixture.replace("FF0000", "ZZ0000"),
     ):
-        assert protocol.parse_eaves_solid(value) is None
+        assert protocol.parse_rgbic_solid(value) is None
     import pytest
 
     for length in (None, 0, -1, 65536, True, "30"):
         with pytest.raises(ValueError, match="length"):
-            protocol.eaves_colour_payload((120, 100), 500, length)
+            protocol.rgbic_colour_payload((120, 100), 500, length)

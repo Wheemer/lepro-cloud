@@ -21,6 +21,7 @@ from aiohttp import ClientError
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from .capabilities import resolved_picker, uses_native_rgb
 from .catalog import PRODUCT_CONFIGS
 from .const import (
     APP_NAME,
@@ -263,7 +264,13 @@ class LeproApi:
                         # Family listings can repeat a device with a sparse
                         # record. Missing identity is not a type/series change.
                         update = dict(device)
-                        for field in ("type", "deviceType", "devType", "series", "control"):
+                        for field in (
+                            "type",
+                            "deviceType",
+                            "devType",
+                            "series",
+                            "control",
+                        ):
                             if update.get(field) in (None, ""):
                                 update.pop(field, None)
                         device = {**previous, **update, "scenes": scenes}
@@ -795,25 +802,9 @@ class LeproCoordinator:
         for did, device in self.devices.items():
             for topic in subscription_topics(did):
                 self._check_subscription(client.subscribe(topic, qos=0))
-            series = device.get("series") or device.get("pid")
-            family = effect_family(device, getattr(self, "effect_types", {}))
-            scene_datapoints = tuple(
-                dict.fromkeys(
-                    selected[0]
-                    for scene in device.get("scenes", [])
-                    if isinstance(scene, dict)
-                    and (selected := selected_effect(scene, family)) is not None
-                )
-            )
-            if "d50" in scene_datapoints:
-                scene_datapoints += ("d52",)
             result = client.publish(
                 topic_get(did),
-                json.dumps(
-                    make_get_payload(
-                        state_datapoints_for_series(series, scene_datapoints)
-                    )
-                ),
+                json.dumps(make_get_payload(self._state_query_datapoints(device))),
                 qos=0,
             )
             if result is not None and result.rc != mqtt.MQTT_ERR_SUCCESS:
@@ -989,12 +980,33 @@ class LeproCoordinator:
             _LOGGER.warning("Lepro device rejected a command")
             self._query_device(did)
 
+    def _state_query_datapoints(self, device: Mapping[str, Any]) -> tuple[str, ...]:
+        """Use the same product-aware query for startup and recovery."""
+        series = str(device.get("series") or device.get("pid") or "")
+        family = effect_family(device, getattr(self, "effect_types", {}))
+        extra = tuple(
+            dict.fromkeys(
+                selected[0]
+                for scene in device.get("scenes", [])
+                if isinstance(scene, dict)
+                and (selected := selected_effect(scene, family)) is not None
+            )
+        )
+        # MqttDpDataKt's DIY state JSON includes d50/d52/d53 even for
+        # native palette products omitted from the connection-pool series list.
+        if uses_native_rgb(series, resolved_picker(device, PRODUCT_CONFIGS)):
+            extra += ("d50", "d52", "d53")
+        elif "d50" in extra:
+            extra += ("d52",)
+        return state_datapoints_for_series(series, extra)
+
     def _query_device(self, did: str) -> None:
         if self.client and self.connected and did in self.devices:
-            series = self.devices[did].get("series")
             self.client.publish(
                 topic_get(did),
-                json.dumps(make_get_payload(state_datapoints_for_series(series))),
+                json.dumps(
+                    make_get_payload(self._state_query_datapoints(self.devices[did]))
+                ),
                 qos=0,
             )
 

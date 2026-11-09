@@ -1,0 +1,1921 @@
+{
+  "library_sha256": "ad917cee5a77b1fd65265ad661cb1470030449bb8e1af2e0c21ec5ff1c8bc2e3",
+  "fixtures": [
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294901760,
+      "length": 9,
+      "payload": "N01:P10001FF0000F2100010009U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294901760
+          ],
+          [
+            9
+          ],
+          9,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294901760
+        ],
+        "lengths": [
+          9
+        ],
+        "remaining": [
+          9,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278255360,
+      "length": 9,
+      "payload": "N01:P1000100FF00F2100010009U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278255360
+          ],
+          [
+            9
+          ],
+          9,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278255360
+        ],
+        "lengths": [
+          9
+        ],
+        "remaining": [
+          9,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278190335,
+      "length": 9,
+      "payload": "N01:P100010000FFF2100010009U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278190335
+          ],
+          [
+            9
+          ],
+          9,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278190335
+        ],
+        "lengths": [
+          9
+        ],
+        "remaining": [
+          9,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294967295,
+      "length": 9,
+      "payload": "N01:P10001FFFFFFF2100010009U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294967295
+          ],
+          [
+            9
+          ],
+          9,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294967295
+        ],
+        "lengths": [
+          9
+        ],
+        "remaining": [
+          9,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294901760,
+      "length": 15,
+      "payload": "N01:P10001FF0000F210001000FU3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294901760
+          ],
+          [
+            15
+          ],
+          15,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294901760
+        ],
+        "lengths": [
+          15
+        ],
+        "remaining": [
+          15,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278255360,
+      "length": 15,
+      "payload": "N01:P1000100FF00F210001000FU3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278255360
+          ],
+          [
+            15
+          ],
+          15,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278255360
+        ],
+        "lengths": [
+          15
+        ],
+        "remaining": [
+          15,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278190335,
+      "length": 15,
+      "payload": "N01:P100010000FFF210001000FU3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278190335
+          ],
+          [
+            15
+          ],
+          15,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278190335
+        ],
+        "lengths": [
+          15
+        ],
+        "remaining": [
+          15,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294967295,
+      "length": 15,
+      "payload": "N01:P10001FFFFFFF210001000FU3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294967295
+          ],
+          [
+            15
+          ],
+          15,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294967295
+        ],
+        "lengths": [
+          15
+        ],
+        "remaining": [
+          15,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294901760,
+      "length": 24,
+      "payload": "N01:P10001FF0000F2100010018U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294901760
+          ],
+          [
+            24
+          ],
+          24,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294901760
+        ],
+        "lengths": [
+          24
+        ],
+        "remaining": [
+          24,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278255360,
+      "length": 24,
+      "payload": "N01:P1000100FF00F2100010018U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278255360
+          ],
+          [
+            24
+          ],
+          24,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278255360
+        ],
+        "lengths": [
+          24
+        ],
+        "remaining": [
+          24,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278190335,
+      "length": 24,
+      "payload": "N01:P100010000FFF2100010018U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278190335
+          ],
+          [
+            24
+          ],
+          24,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278190335
+        ],
+        "lengths": [
+          24
+        ],
+        "remaining": [
+          24,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294967295,
+      "length": 24,
+      "payload": "N01:P10001FFFFFFF2100010018U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294967295
+          ],
+          [
+            24
+          ],
+          24,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294967295
+        ],
+        "lengths": [
+          24
+        ],
+        "remaining": [
+          24,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294901760,
+      "length": 25,
+      "payload": "N01:P10001FF0000F2100010019U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294901760
+          ],
+          [
+            25
+          ],
+          25,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294901760
+        ],
+        "lengths": [
+          25
+        ],
+        "remaining": [
+          25,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278255360,
+      "length": 25,
+      "payload": "N01:P1000100FF00F2100010019U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278255360
+          ],
+          [
+            25
+          ],
+          25,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278255360
+        ],
+        "lengths": [
+          25
+        ],
+        "remaining": [
+          25,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278190335,
+      "length": 25,
+      "payload": "N01:P100010000FFF2100010019U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278190335
+          ],
+          [
+            25
+          ],
+          25,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278190335
+        ],
+        "lengths": [
+          25
+        ],
+        "remaining": [
+          25,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294967295,
+      "length": 25,
+      "payload": "N01:P10001FFFFFFF2100010019U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294967295
+          ],
+          [
+            25
+          ],
+          25,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294967295
+        ],
+        "lengths": [
+          25
+        ],
+        "remaining": [
+          25,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294901760,
+      "length": 30,
+      "payload": "N01:P10001FF0000F210001001EU3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294901760
+          ],
+          [
+            30
+          ],
+          30,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294901760
+        ],
+        "lengths": [
+          30
+        ],
+        "remaining": [
+          30,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278255360,
+      "length": 30,
+      "payload": "N01:P1000100FF00F210001001EU3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278255360
+          ],
+          [
+            30
+          ],
+          30,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278255360
+        ],
+        "lengths": [
+          30
+        ],
+        "remaining": [
+          30,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278190335,
+      "length": 30,
+      "payload": "N01:P100010000FFF210001001EU3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278190335
+          ],
+          [
+            30
+          ],
+          30,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278190335
+        ],
+        "lengths": [
+          30
+        ],
+        "remaining": [
+          30,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294967295,
+      "length": 30,
+      "payload": "N01:P10001FFFFFFF210001001EU3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294967295
+          ],
+          [
+            30
+          ],
+          30,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294967295
+        ],
+        "lengths": [
+          30
+        ],
+        "remaining": [
+          30,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294901760,
+      "length": 36,
+      "payload": "N01:P10001FF0000F2100010024U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294901760
+          ],
+          [
+            36
+          ],
+          36,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294901760
+        ],
+        "lengths": [
+          36
+        ],
+        "remaining": [
+          36,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278255360,
+      "length": 36,
+      "payload": "N01:P1000100FF00F2100010024U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278255360
+          ],
+          [
+            36
+          ],
+          36,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278255360
+        ],
+        "lengths": [
+          36
+        ],
+        "remaining": [
+          36,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278190335,
+      "length": 36,
+      "payload": "N01:P100010000FFF2100010024U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278190335
+          ],
+          [
+            36
+          ],
+          36,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278190335
+        ],
+        "lengths": [
+          36
+        ],
+        "remaining": [
+          36,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294967295,
+      "length": 36,
+      "payload": "N01:P10001FFFFFFF2100010024U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294967295
+          ],
+          [
+            36
+          ],
+          36,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294967295
+        ],
+        "lengths": [
+          36
+        ],
+        "remaining": [
+          36,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294901760,
+      "length": 48,
+      "payload": "N01:P10001FF0000F2100010030U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294901760
+          ],
+          [
+            48
+          ],
+          48,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294901760
+        ],
+        "lengths": [
+          48
+        ],
+        "remaining": [
+          48,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278255360,
+      "length": 48,
+      "payload": "N01:P1000100FF00F2100010030U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278255360
+          ],
+          [
+            48
+          ],
+          48,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278255360
+        ],
+        "lengths": [
+          48
+        ],
+        "remaining": [
+          48,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278190335,
+      "length": 48,
+      "payload": "N01:P100010000FFF2100010030U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278190335
+          ],
+          [
+            48
+          ],
+          48,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278190335
+        ],
+        "lengths": [
+          48
+        ],
+        "remaining": [
+          48,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294967295,
+      "length": 48,
+      "payload": "N01:P10001FFFFFFF2100010030U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294967295
+          ],
+          [
+            48
+          ],
+          48,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294967295
+        ],
+        "lengths": [
+          48
+        ],
+        "remaining": [
+          48,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294901760,
+      "length": 50,
+      "payload": "N01:P10001FF0000F2100010032U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294901760
+          ],
+          [
+            50
+          ],
+          50,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294901760
+        ],
+        "lengths": [
+          50
+        ],
+        "remaining": [
+          50,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278255360,
+      "length": 50,
+      "payload": "N01:P1000100FF00F2100010032U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278255360
+          ],
+          [
+            50
+          ],
+          50,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278255360
+        ],
+        "lengths": [
+          50
+        ],
+        "remaining": [
+          50,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278190335,
+      "length": 50,
+      "payload": "N01:P100010000FFF2100010032U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278190335
+          ],
+          [
+            50
+          ],
+          50,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278190335
+        ],
+        "lengths": [
+          50
+        ],
+        "remaining": [
+          50,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294967295,
+      "length": 50,
+      "payload": "N01:P10001FFFFFFF2100010032U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294967295
+          ],
+          [
+            50
+          ],
+          50,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294967295
+        ],
+        "lengths": [
+          50
+        ],
+        "remaining": [
+          50,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294901760,
+      "length": 68,
+      "payload": "N01:P10001FF0000F2100010044U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294901760
+          ],
+          [
+            68
+          ],
+          68,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294901760
+        ],
+        "lengths": [
+          68
+        ],
+        "remaining": [
+          68,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278255360,
+      "length": 68,
+      "payload": "N01:P1000100FF00F2100010044U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278255360
+          ],
+          [
+            68
+          ],
+          68,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278255360
+        ],
+        "lengths": [
+          68
+        ],
+        "remaining": [
+          68,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278190335,
+      "length": 68,
+      "payload": "N01:P100010000FFF2100010044U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278190335
+          ],
+          [
+            68
+          ],
+          68,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278190335
+        ],
+        "lengths": [
+          68
+        ],
+        "remaining": [
+          68,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294967295,
+      "length": 68,
+      "payload": "N01:P10001FFFFFFF2100010044U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294967295
+          ],
+          [
+            68
+          ],
+          68,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294967295
+        ],
+        "lengths": [
+          68
+        ],
+        "remaining": [
+          68,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294901760,
+      "length": 75,
+      "payload": "N01:P10001FF0000F210001004BU3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294901760
+          ],
+          [
+            75
+          ],
+          75,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294901760
+        ],
+        "lengths": [
+          75
+        ],
+        "remaining": [
+          75,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278255360,
+      "length": 75,
+      "payload": "N01:P1000100FF00F210001004BU3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278255360
+          ],
+          [
+            75
+          ],
+          75,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278255360
+        ],
+        "lengths": [
+          75
+        ],
+        "remaining": [
+          75,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278190335,
+      "length": 75,
+      "payload": "N01:P100010000FFF210001004BU3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278190335
+          ],
+          [
+            75
+          ],
+          75,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278190335
+        ],
+        "lengths": [
+          75
+        ],
+        "remaining": [
+          75,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294967295,
+      "length": 75,
+      "payload": "N01:P10001FFFFFFF210001004BU3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294967295
+          ],
+          [
+            75
+          ],
+          75,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294967295
+        ],
+        "lengths": [
+          75
+        ],
+        "remaining": [
+          75,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294901760,
+      "length": 152,
+      "payload": "N01:P10001FF0000F2100010098U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294901760
+          ],
+          [
+            152
+          ],
+          152,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294901760
+        ],
+        "lengths": [
+          152
+        ],
+        "remaining": [
+          152,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278255360,
+      "length": 152,
+      "payload": "N01:P1000100FF00F2100010098U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278255360
+          ],
+          [
+            152
+          ],
+          152,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278255360
+        ],
+        "lengths": [
+          152
+        ],
+        "remaining": [
+          152,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278190335,
+      "length": 152,
+      "payload": "N01:P100010000FFF2100010098U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278190335
+          ],
+          [
+            152
+          ],
+          152,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278190335
+        ],
+        "lengths": [
+          152
+        ],
+        "remaining": [
+          152,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294967295,
+      "length": 152,
+      "payload": "N01:P10001FFFFFFF2100010098U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294967295
+          ],
+          [
+            152
+          ],
+          152,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294967295
+        ],
+        "lengths": [
+          152
+        ],
+        "remaining": [
+          152,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294901760,
+      "length": 196,
+      "payload": "N01:P10001FF0000F21000100C4U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294901760
+          ],
+          [
+            196
+          ],
+          196,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294901760
+        ],
+        "lengths": [
+          196
+        ],
+        "remaining": [
+          196,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278255360,
+      "length": 196,
+      "payload": "N01:P1000100FF00F21000100C4U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278255360
+          ],
+          [
+            196
+          ],
+          196,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278255360
+        ],
+        "lengths": [
+          196
+        ],
+        "remaining": [
+          196,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4278190335,
+      "length": 196,
+      "payload": "N01:P100010000FFF21000100C4U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278190335
+          ],
+          [
+            196
+          ],
+          196,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278190335
+        ],
+        "lengths": [
+          196
+        ],
+        "remaining": [
+          196,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 1,
+      "colour": 4294967295,
+      "length": 196,
+      "payload": "N01:P10001FFFFFFF21000100C4U3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294967295
+          ],
+          [
+            196
+          ],
+          196,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294967295
+        ],
+        "lengths": [
+          196
+        ],
+        "remaining": [
+          196,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 3,
+      "colour": 4294944343,
+      "length": 30,
+      "payload": "N01:P40001FF00F210001001EU3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294944343
+          ],
+          [
+            30
+          ],
+          30,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294944343
+        ],
+        "lengths": [
+          30
+        ],
+        "remaining": [
+          30,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 3,
+      "colour": 4294967295,
+      "length": 30,
+      "payload": "N01:P40001FFFFF210001001EU3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4294967295
+          ],
+          [
+            30
+          ],
+          30,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4294967295
+        ],
+        "lengths": [
+          30
+        ],
+        "remaining": [
+          30,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValue",
+      "mode": 3,
+      "colour": 4278190080,
+      "length": 30,
+      "payload": "N01:P4000100FFF210001001EU3V3000640000E1;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(I[I[IIII)V"
+        },
+        "arguments": [
+          1,
+          [
+            4278190080
+          ],
+          [
+            30
+          ],
+          30,
+          0,
+          0
+        ],
+        "type": 1,
+        "colours": [
+          4278190080
+        ],
+        "lengths": [
+          30
+        ],
+        "remaining": [
+          30,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "native": "diyValueForO1",
+      "mode": 4,
+      "colour": 4278255360,
+      "length": 182,
+      "layer": 2,
+      "speed": 0,
+      "payload": "T01:M05P5000100FF0000B6L0010R0000S0000T0000;",
+      "decoded": {
+        "constructor": {
+          "method": "<init>",
+          "descriptor": "(III[I[IIII)V"
+        },
+        "arguments": [
+          0,
+          2,
+          0,
+          [
+            4278255360
+          ],
+          [
+            182
+          ],
+          182,
+          0,
+          0
+        ]
+      }
+    }
+  ]
+}

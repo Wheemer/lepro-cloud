@@ -1,3 +1,5 @@
+> Historical E1 investigation. The broader [APK command audit](APK-COMMAND-AUDIT.md) adds verified native P4 white support, app length fallback and the other native palette families. Its conclusions supersede earlier RGB-only or missing-length-error assumptions here.
+
 # E1-30 capability regression
 
 ## Product evidence

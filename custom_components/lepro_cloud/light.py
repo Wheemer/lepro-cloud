@@ -18,6 +18,13 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .capabilities import (
+    has_native_cct,
+    pattern_length,
+    resolved_picker,
+    uses_native_rgb,
+    uses_pattern_cct,
+)
 from .catalog import BULB_PRESETS, PRODUCT_CONFIGS
 from .client import LeproCoordinator
 from .const import DOMAIN
@@ -36,14 +43,16 @@ from .protocol import (
     brightness_payload,
     color_payload,
     device_brightness,
-    eaves_colour_payload,
     ha_to_lepro_brightness,
     lepro_hsv_to_hs,
     lepro_temperature_to_kelvin,
     lepro_to_ha_brightness,
     on_payload,
-    parse_eaves_solid,
     parse_lepro_hsv,
+    parse_rgbic_solid,
+    parse_rgbic_white,
+    rgbic_colour_payload,
+    rgbic_white_payload,
     scene_brightness,
     state_datapoints_for_series,
     state_is_on,
@@ -132,7 +141,11 @@ class LeproCloudLight(LightEntity):
                     )
                 except ValueError:
                     return None
-        if self._work_mode == WORK_MODE_COLOR:
+        if self._work_mode == WORK_MODE_COLOR or (
+            self._work_mode == WORK_MODE_SCENE
+            and self._brightness_datapoint == DP_BRIGHTNESS
+            and "d6" not in state
+        ):
             hsv = parse_lepro_hsv(state.get(DP_COLOR))
             if hsv is not None:
                 return lepro_to_ha_brightness(hsv[2])
@@ -144,7 +157,8 @@ class LeproCloudLight(LightEntity):
         state = self.coordinator.states.get(self.device_id, {})
         series = self.device.get("series") or self.device.get("pid")
         if (
-            DP_RGBIC_BRIGHTNESS in state
+            self._uses_native_pattern
+            or DP_RGBIC_BRIGHTNESS in state
             or DP_RGBIC_BRIGHTNESS in state_datapoints_for_series(series)
             or any(
                 datapoint == "d50" for datapoint, _value in self._scene_effects.values()
@@ -168,9 +182,12 @@ class LeproCloudLight(LightEntity):
         """Return color modes supported by currently reported datapoints."""
         state = self.coordinator.states.get(self.device_id, {})
         modes = set()
-        picker = self.device.get("_color_picker")
-        if not isinstance(picker, str):
-            picker = None
+        picker = resolved_picker(self.device, PRODUCT_CONFIGS)
+        series = str(self.device.get("series") or self.device.get("pid") or "").upper()
+        if has_native_cct(series, picker):
+            return {ColorMode.HS, ColorMode.COLOR_TEMP}
+        if uses_native_rgb(series, picker):
+            return {ColorMode.HS}
         if picker == "":
             return {ColorMode.BRIGHTNESS}
         if picker == "rgbcw":
@@ -212,6 +229,16 @@ class LeproCloudLight(LightEntity):
         if work_mode == WORK_MODE_COLOR and ColorMode.HS in supported:
             return ColorMode.HS
         if work_mode == WORK_MODE_WHITE and ColorMode.COLOR_TEMP in supported:
+            return ColorMode.COLOR_TEMP
+        if (
+            work_mode == WORK_MODE_SCENE
+            and self._uses_native_pattern
+            and parse_rgbic_white(
+                self.coordinator.states.get(self.device_id, {}).get("d50")
+            )
+            is not None
+            and ColorMode.COLOR_TEMP in supported
+        ):
             return ColorMode.COLOR_TEMP
         if ColorMode.HS in supported:
             return ColorMode.HS
@@ -291,39 +318,31 @@ class LeproCloudLight(LightEntity):
         return effects
 
     @property
-    def _uses_eaves_pattern(self) -> bool:
-        picker = self.device.get("_color_picker")
-        if not isinstance(picker, str):
-            series = str(self.device.get("series") or "").upper()
-            picker = next(
-                (
-                    item["colorPicker"]
-                    for item in PRODUCT_CONFIGS
-                    if str(item["series"]).upper() == series
-                ),
-                None,
-            )
-        return picker == "diyEaves"
+    def _uses_native_pattern(self) -> bool:
+        series = str(self.device.get("series") or self.device.get("pid") or "").upper()
+        return uses_native_rgb(series, resolved_picker(self.device, PRODUCT_CONFIGS))
 
-    def _eaves_length(self) -> int:
+    @property
+    def _uses_pattern_white(self) -> bool:
+        series = str(self.device.get("series") or self.device.get("pid") or "").upper()
+        return uses_pattern_cct(series, resolved_picker(self.device, PRODUCT_CONFIGS))
+
+    def _pattern_length(self) -> int:
         state = self.coordinator.states.get(self.device_id, {})
-        length = state.get("d53")
-        if (
-            isinstance(length, int)
-            and not isinstance(length, bool)
-            and 1 <= length <= 65535
-        ):
-            return length
-        parsed = parse_eaves_solid(state.get("d50"))
-        if parsed is not None:
-            return parsed[1]
-        raise ValueError("Eaves light length is unavailable; waiting for device state")
+        series = str(self.device.get("series") or "").upper()
+        if series.startswith("E1-") and not state.get("d53"):
+            parsed = parse_rgbic_solid(state.get("d50")) or parse_rgbic_white(
+                state.get("d50")
+            )
+            if parsed is not None:
+                return parsed[1]
+        return pattern_length(self.device, state)
 
     @property
     def hs_color(self) -> tuple[float, float] | None:
         """Read eaves RGB scene colour or the ordinary d5 HSV value."""
-        if self._uses_eaves_pattern and self._work_mode == WORK_MODE_SCENE:
-            parsed = parse_eaves_solid(
+        if self._uses_native_pattern and self._work_mode == WORK_MODE_SCENE:
+            parsed = parse_rgbic_solid(
                 self.coordinator.states.get(self.device_id, {}).get("d50")
             )
             return parsed[0] if parsed is not None else None
@@ -334,9 +353,11 @@ class LeproCloudLight(LightEntity):
     @property
     def color_temp_kelvin(self) -> int | None:
         """Return color temperature from Lepro d4."""
-        return lepro_temperature_to_kelvin(
-            self.coordinator.states.get(self.device_id, {}).get(DP_TEMPERATURE)
-        )
+        state = self.coordinator.states.get(self.device_id, {})
+        if self._uses_pattern_white and self._work_mode == WORK_MODE_SCENE:
+            parsed = parse_rgbic_white(state.get("d50"))
+            return parsed[0] if parsed is not None else None
+        return lepro_temperature_to_kelvin(state.get(DP_TEMPERATURE))
 
     @property
     def min_color_temp_kelvin(self) -> int:
@@ -391,34 +412,64 @@ class LeproCloudLight(LightEntity):
             # values and must remain byte-for-byte intact.
             if datapoint == "d50":
                 values[DP_RGBIC_BRIGHTNESS] = level(effect=True)
-            elif datapoint == "d6":
+            elif datapoint == "d6" and ATTR_BRIGHTNESS in kwargs:
                 values["d6"] = scene_brightness(value, level(effect=True))
+            elif datapoint == "d5":
+                values["d5"] = f"{value[:8]}{level(effect=True):04X}"
+            elif datapoint in {"d3", "d52"}:
+                values[datapoint] = level(effect=True)
         elif ATTR_HS_COLOR in kwargs:
-            if self._uses_eaves_pattern:
+            if self._uses_native_pattern:
                 values.update(
-                    eaves_colour_payload(
-                        kwargs[ATTR_HS_COLOR], level(effect=True), self._eaves_length()
+                    rgbic_colour_payload(
+                        kwargs[ATTR_HS_COLOR],
+                        level(effect=True),
+                        self._pattern_length(),
+                        floor=str(self.device.get("series", "")).upper() == "O1",
                     )
                 )
             else:
                 values.update(color_payload(kwargs[ATTR_HS_COLOR], brightness))
         elif ATTR_COLOR_TEMP_KELVIN in kwargs:
-            values.update(white_payload(brightness, kwargs[ATTR_COLOR_TEMP_KELVIN]))
+            if self._uses_pattern_white:
+                values.update(
+                    rgbic_white_payload(
+                        kwargs[ATTR_COLOR_TEMP_KELVIN],
+                        level(effect=True),
+                        self._pattern_length(),
+                    )
+                )
+            else:
+                values.update(white_payload(brightness, kwargs[ATTR_COLOR_TEMP_KELVIN]))
         elif ATTR_BRIGHTNESS in kwargs:
             # Keep an active RGBIC scene in d2=2; the official app changes only d52.
             if self._work_mode in (WORK_MODE_SCENE, 3, 5):
+                if self._work_mode == 3 and self._brightness_datapoint == DP_BRIGHTNESS:
+                    raise ValueError(
+                        "Brightness control in app music mode is unavailable for this product"
+                    )
                 values[DP_WORK_MODE] = self._work_mode
                 if self._work_mode == WORK_MODE_SCENE and (
                     effect_family(self.device, self.coordinator.effect_types)
                     == "smartbulb"
                     or self._brightness_datapoint == DP_BRIGHTNESS
                 ):
-                    current = self.coordinator.states.get(self.device_id, {}).get("d6")
-                    if not isinstance(current, str):
-                        raise ValueError(
-                            "No valid scene data available for brightness adjustment"
-                        )
-                    values["d6"] = scene_brightness(current, level(effect=True))
+                    state = self.coordinator.states.get(self.device_id, {})
+                    active = self._scene_effects.get(self.effect)
+                    if active is not None and active[0] in {"d3", "d52"}:
+                        values[active[0]] = level(effect=True)
+                    elif (active is not None and active[0] == "d5") or (
+                        "d6" not in state
+                        and parse_lepro_hsv(state.get("d5")) is not None
+                    ):
+                        values["d5"] = f"{state['d5'][:8]}{level(effect=True):04X}"
+                    else:
+                        current = state.get("d6")
+                        if not isinstance(current, str):
+                            raise ValueError(
+                                "No valid scene data available for brightness adjustment"
+                            )
+                        values["d6"] = scene_brightness(current, level(effect=True))
                 elif self._work_mode == 5:
                     # TVModeFragment's 0–100 seekbar writes progress * 10 directly.
                     values[DP_RGBIC_BRIGHTNESS] = max(

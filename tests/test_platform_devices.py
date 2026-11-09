@@ -587,19 +587,19 @@ def test_family_payload_selection_never_chooses_an_arbitrary_nested_effect() -> 
     assert entity.effect_list is None
 
 
-def test_invalid_hsv_scene_is_not_mistaken_for_an_apk_d6_preset() -> None:
+def test_hsv_scene_is_supported_as_d5_without_treating_it_as_d6() -> None:
     light = _load_module("light")
     coordinator = FakeCoordinator()
     device = {
         "type": 1,
         "series": "B1",
         "scenes": [
-            {"name": "Invalid", "smartbulb": {"dp": "d5", "res": "007801F403E8"}}
+            {"name": "Saved HSV", "smartbulb": {"dp": "d5", "res": "007801F403E8"}}
         ],
     }
     entity = light.LeproCloudLight(coordinator, "light-1", device)
-    assert "Invalid" not in entity.effect_list
-    assert set(entity.effect_list) == {"Gradient", "Rainbow"}
+    assert entity._scene_effects["Saved HSV"] == ("d5", "007801F403E8")
+    assert set(entity.effect_list) == {"Gradient", "Rainbow", "Saved HSV"}
 
 
 def test_mqtt_entities_disable_home_assistant_polling() -> None:

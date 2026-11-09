@@ -58,6 +58,7 @@ def verify(path: Path) -> None:
             "_private/mqtt_client_key.pem",
             "app_auth.py",
             "catalog.py",
+            "capabilities.py",
             "scenes.py",
         }
         if not required <= names:

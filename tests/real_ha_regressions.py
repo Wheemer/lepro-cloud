@@ -1006,8 +1006,8 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
             })
         self.co.states["lamp"].pop("d53")
         self.co.states["lamp"]["d50"] = "unparsed-multipart"
-        with self.assertRaisesRegex(ValueError, "length"):
-            await entity.async_turn_on(hs_color=(120, 100))
+        await entity.async_turn_on(hs_color=(120, 100))
+        self.assertIn("000F", self.broker.messages[-1][1]["d"]["d50"])
 
     async def test_duplicate_discovery_preserves_e1_identity_from_complete_record(self):
         api = client.LeproApi.__new__(client.LeproApi)
@@ -1077,7 +1077,7 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(registry.async_get(old_switch.entity_id))
             self.assertEqual({item.domain for item in after}, {"light", "binary_sensor"})
             light_id = next(item.entity_id for item in after if item.domain == "light")
-            self.assertEqual(hass.states.get(light_id).attributes["supported_color_modes"], ["hs"])
+            self.assertEqual(hass.states.get(light_id).attributes["supported_color_modes"], ["color_temp", "hs"])
             # Stale capability metadata must not survive another upgrade/reload.
             self.assertTrue(await hass.config_entries.async_unload(entry.entry_id))
             registry.async_update_entity(
@@ -1086,8 +1086,8 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertTrue(await hass.config_entries.async_setup(entry.entry_id))
             await hass.async_block_till_done()
-            self.assertEqual(hass.states.get(light_id).attributes["supported_color_modes"], ["hs"])
-            self.assertEqual(registry.async_get(light_id).capabilities["supported_color_modes"], ["hs"])
+            self.assertEqual(hass.states.get(light_id).attributes["supported_color_modes"], ["color_temp", "hs"])
+            self.assertEqual(registry.async_get(light_id).capabilities["supported_color_modes"], ["color_temp", "hs"])
             self.assertEqual(registry.async_get(light_id).name, "Garden lights")
             self.assertEqual(registry.async_get(light_id).icon, "mdi:outdoor-lamp")
             self.assertTrue(await hass.config_entries.async_unload(entry.entry_id))
@@ -1146,7 +1146,7 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
             for cycle in range(2):
                 co = entry.runtime_data
                 attrs = hass.states.get(entity_id).attributes
-                self.assertEqual(attrs["supported_color_modes"], ["hs"])
+                self.assertEqual(attrs["supported_color_modes"], ["color_temp", "hs"])
                 queries = [
                     payload["d"] for topic, payload in co.client.messages if topic.endswith("/get")
                 ]
@@ -1165,7 +1165,7 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
                     ))
                     await hass.async_block_till_done()
                     state = hass.states.get(entity_id)
-                    self.assertEqual(state.attributes["supported_color_modes"], ["hs"])
+                    self.assertEqual(state.attributes["supported_color_modes"], ["color_temp", "hs"])
                 await hass.services.async_call(
                     "light", "turn_on",
                     {"entity_id": entity_id, "hs_color": [240, 100], "brightness": 128},
@@ -1178,7 +1178,7 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
                 })
                 await co._refresh_session()
                 await hass.async_block_till_done()
-                self.assertEqual(hass.states.get(entity_id).attributes["supported_color_modes"], ["hs"])
+                self.assertEqual(hass.states.get(entity_id).attributes["supported_color_modes"], ["color_temp", "hs"])
                 if cycle == 0:
                     self.assertTrue(await hass.config_entries.async_reload(entry.entry_id))
                     await hass.async_block_till_done()
@@ -1225,7 +1225,7 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
             )
             entity_id = next(item.entity_id for item in entities if item.domain == "light")
             attrs = hass.states.get(entity_id).attributes
-            self.assertEqual(attrs["supported_color_modes"], ["hs"])
+            self.assertEqual(attrs["supported_color_modes"], ["color_temp", "hs"])
             self.assertEqual(attrs["brightness"], 255)
             self.assertIn("Favourite", attrs["effect_list"])
             for params in ({"brightness": 128}, {"effect": "Favourite"}, {"hs_color": [120, 100]}):
@@ -1257,7 +1257,7 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
             {"name": "Favourite", "striplight": {"dp": "d50", "res": "saved-eaves"}}
         ]
         entity = light.LeproCloudLight(self.co, "lamp", self.co.devices["lamp"])
-        self.assertEqual(entity.supported_color_modes, {light.ColorMode.HS})
+        self.assertEqual(entity.supported_color_modes, {light.ColorMode.HS, light.ColorMode.COLOR_TEMP})
         self.assertEqual(entity.effect_list, ["Favourite"])
         self.assertEqual(entity._brightness_datapoint, "d52")
 
@@ -1273,7 +1273,7 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
         ]
         entity = light.LeproCloudLight(self.co, "lamp", self.co.devices["lamp"])
         entity.hass = self.hass
-        self.assertEqual(entity.supported_color_modes, {light.ColorMode.HS})
+        self.assertEqual(entity.supported_color_modes, {light.ColorMode.HS, light.ColorMode.COLOR_TEMP})
         await entity.async_turn_on(brightness=128)
         self.assertEqual(self.broker.messages[-1][1]["d"], {"d1": 1, "d2": 2, "d52": 502})
         await entity.async_turn_on(effect="Favourite")
@@ -1323,7 +1323,11 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(before, entity.supported_color_modes)
             self.assertEqual(
                 before,
-                {light.ColorMode.BRIGHTNESS} if picker == "" else {light.ColorMode.HS},
+                {light.ColorMode.BRIGHTNESS}
+                if picker == ""
+                else {light.ColorMode.HS, light.ColorMode.COLOR_TEMP}
+                if picker in {"diyEaves", "diyString"}
+                else {light.ColorMode.HS},
             )
             self.co.states.clear()
         entity = light.LeproCloudLight(

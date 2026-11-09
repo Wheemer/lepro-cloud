@@ -252,16 +252,16 @@ def color_payload(hs_color: tuple[float, float], ha_brightness: Any) -> dict[str
     }
 
 
-def eaves_colour_payload(
-    hs_color: tuple[float, float], brightness: int, length: int
+def rgbic_colour_payload(
+    hs_color: tuple[float, float], brightness: int, length: int, *, floor: bool = False
 ) -> dict[str, Any]:
-    """Build the APK native encoder's single-colour RGB eaves pattern."""
+    """Build a single-colour pattern checked against the APK native encoders."""
     if (
         isinstance(length, bool)
         or not isinstance(length, int)
         or not 1 <= length <= 65535
     ):
-        raise ValueError("Eaves light length is unavailable or invalid")
+        raise ValueError("RGBIC light length is unavailable or invalid")
     hue, saturation = hs_color
     rgb = colorsys.hsv_to_rgb(
         float(hue) % 360 / 360, max(0.0, min(100.0, float(saturation))) / 100, 1.0
@@ -269,12 +269,16 @@ def eaves_colour_payload(
     colour = "".join(f"{int(channel * 255 + 0.5):02X}" for channel in rgb)
     return {
         DP_WORK_MODE: WORK_MODE_SCENE,
-        "d50": f"N01:P10001{colour}F210001{length:04X}U3V3000640000E1;",
+        "d50": (
+            f"T01:M05P50001{colour}{length:04X}L0010R0000S0000T0000;"
+            if floor
+            else f"N01:P10001{colour}F210001{length:04X}U3V3000640000E1;"
+        ),
         DP_RGBIC_BRIGHTNESS: brightness,
     }
 
 
-def parse_eaves_solid(value: Any) -> tuple[tuple[float, float], int] | None:
+def parse_rgbic_solid(value: Any) -> tuple[tuple[float, float], int] | None:
     """Decode only the native encoder's complete single-colour RGB solid form."""
     if not isinstance(value, str):
         return None
@@ -282,11 +286,48 @@ def parse_eaves_solid(value: Any) -> tuple[tuple[float, float], int] | None:
         r"N01:P10001([0-9A-Fa-f]{6})F210001([0-9A-Fa-f]{4})U3V3000640000E1;",
         value,
     )
+    if match is None:
+        match = re.fullmatch(
+            r"T01:M05P50001([0-9A-Fa-f]{6})([0-9A-Fa-f]{4})L[01]{4}R0000S0000T[0-9A-Fa-f]{2}00;",
+            value,
+        )
     if match is None or (length := int(match[2], 16)) == 0:
         return None
     rgb = tuple(int(match[1][i : i + 2], 16) / 255 for i in (0, 2, 4))
     hue, saturation, _value = colorsys.rgb_to_hsv(*rgb)
     return (round(hue * 360, 3), round(saturation * 100, 3)), length
+
+
+def rgbic_white_payload(kelvin: int, brightness: int, length: int) -> dict[str, Any]:
+    """Encode the native P4 warm/cold axis; HA Kelvin is a UI mapping."""
+    if (
+        isinstance(length, bool)
+        or not isinstance(length, int)
+        or not 1 <= length <= 65535
+    ):
+        raise ValueError("RGBIC light length is unavailable or invalid")
+    temperature = round(kelvin_to_lepro_temperature(kelvin) * 255 / 1000)
+    return {
+        DP_WORK_MODE: WORK_MODE_SCENE,
+        DP_RGBIC_BRIGHTNESS: brightness,
+        "d50": f"N01:P40001FF{temperature:02X}F210001{length:04X}U3V3000640000E1;",
+    }
+
+
+def parse_rgbic_white(value: Any) -> tuple[int, int] | None:
+    """Decode a single P4 white group, retaining its native warm/cold axis."""
+    if not isinstance(value, str):
+        return None
+    match = re.fullmatch(
+        r"N01:P40001[0-9A-Fa-f]{2}([0-9A-Fa-f]{2})F210001([0-9A-Fa-f]{4})U3V3000640000E1;",
+        value,
+    )
+    if match is None or (length := int(match[2], 16)) == 0:
+        return None
+    kelvin = round(
+        MIN_HA_KELVIN + int(match[1], 16) / 255 * (MAX_HA_KELVIN - MIN_HA_KELVIN)
+    )
+    return kelvin, length
 
 
 def hs_to_lepro_hsv(hs_color: tuple[float, float], value: Any = MAX_COLOR_VALUE) -> str:
