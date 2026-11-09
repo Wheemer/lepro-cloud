@@ -249,7 +249,12 @@ async def main():
                         "did": DID,
                         "type": 1,
                         "control": 2,
-                        "series": "E1-30",
+                        **(
+                            {"series": DEVICE_SERIES}
+                            if DEVICE_SERIES is not None
+                            else {}
+                        ),
+                        **({"proId": PRODUCT_ID} if PRODUCT_ID is not None else {}),
                         "fid": "owner",
                         "name": "Fixture",
                     }
@@ -415,7 +420,12 @@ if __name__ == "__main__":
         default="getr",
     )
     parser.add_argument("--initial-mode", type=int, choices=(0, 1, 2), default=2)
+    parser.add_argument("--product-id", type=int, choices=(68, 115))
+    parser.add_argument("--device-series", default="E1-30")
+    parser.add_argument("--omit-series", action="store_true")
     args = parser.parse_args()
+    PRODUCT_ID = args.product_id
+    DEVICE_SERIES = None if args.omit_series else args.device_series
     INITIAL_MODE = args.initial_mode
     REPLY_SUFFIX = args.reply_suffix
     WORK = args.work_dir.resolve() / f"run-{time.time_ns()}"

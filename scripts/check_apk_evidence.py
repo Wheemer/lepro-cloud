@@ -10,6 +10,8 @@ import hashlib
 import importlib.util
 import json
 import re
+import sys
+import types
 import zipfile
 from pathlib import Path
 
@@ -33,6 +35,16 @@ def verify(apk: Path, decompiled: Path) -> None:
     ]
     if catalog.PRODUCT_CONFIGS != expected:
         raise ValueError("Packaged product fallback differs from APK data")
+    series_catalog = json.loads(
+        (decompiled / "resources/assets/series_response.json").read_text()
+    )
+    expected_ids = {
+        item["pid"]: item["series"]
+        for item in series_catalog
+        if item.get("series") == "E1-30"
+    }
+    if catalog.E1_PRODUCT_SERIES != expected_ids:
+        raise ValueError("E1 product identity map differs from the APK catalog")
     java = (
         decompiled
         / "sources/com/lepro/lamp/p047ui/adapter/BasicEffectBulbLampAdapter.java"
@@ -44,7 +56,11 @@ def verify(apk: Path, decompiled: Path) -> None:
         raise ValueError("Ordinary bulb presets differ from the APK constructors")
 
     path = ROOT / "custom_components/lepro_cloud/capabilities.py"
-    spec = importlib.util.spec_from_file_location("capability_evidence", path)
+    package_name = "lepro_cloud_evidence"
+    package = types.ModuleType(package_name)
+    package.__path__ = [str(path.parent)]
+    sys.modules[package_name] = package
+    spec = importlib.util.spec_from_file_location(f"{package_name}.capabilities", path)
     profiles = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(profiles)
     base = decompiled / "sources/com/lepro/lamp/p047ui"

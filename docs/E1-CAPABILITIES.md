@@ -286,3 +286,36 @@ response/report topics, merges partial state, and notifies entity listeners.
 No MQTT callback modifies device type, series or picker, and native parsing
 does not participate in capability declaration. The source still does not
 establish the reporter's actual input or exact failure.
+
+### Product-ID recognition recovery
+
+The user's model description does not prove the cloud series field. The focused
+series-metadata trace reproduced missing colour recognition for missing, null,
+blank, stale or conflicting series, including a native d50/d52/d53 report that
+could not repair the profile. Queries also omitted native fields in that state.
+
+The correction uses only verified series_response.json product IDs 68 and 115
+to recover E1-30. These IDs override inconsistent series text and stale picker/
+effect metadata. A shared product_series resolver drives profile lookup,
+capabilities, native state queries, decoding, length handling and command routes.
+Raw discovery series and entity unique IDs remain intact. The device model
+uses the recovered E1-30 identity. Numeric pid is accepted only as a legacy
+alias when proId is absent; an explicit other proId prevents that override.
+Sparse duplicate family records preserve an earlier product ID; explicit ID
+changes trigger profile reload. Device type and transport filtering still apply.
+
+Offline regressions run actual discovery/profile/platform/MQTT methods with
+missing and conflicting series, both verified IDs and numeric representations.
+Native red readback, green P1 commands, P4 white, d52-only dimming, native query
+fields, stable entity identity and camera/plug exclusions are covered.
+Unknown IDs, user-assigned names and LED counts do not imply E1 hardware.
+The evidence checker compares the identity map directly with the supplied APK.
+
+Real Paho/mTLS loopback runs (no HA instance) additionally complete HTTPS
+discovery, initial native GET, colour/dimming/favourite/off/on and report-driven
+readback for product 68 with no series, and product 115 incorrectly labelled
+D1. Permanent results: mqtt-wire/product-68-missing-series.log and
+mqtt-wire/product-115-wrong-series.log in the command-audit research directory.
+
+This fixes the reproduced recognition gap. It does not prove which discovery
+record Andy received or establish physical operation on his device.

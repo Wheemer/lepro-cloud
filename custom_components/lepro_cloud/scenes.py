@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from .catalog import PRODUCT_CONFIGS
+from .device import apk_product_series, product_series
 from .protocol import parse_lepro_hsv, scene_brightness
 
 EFFECT_FAMILIES = frozenset(
@@ -23,7 +24,11 @@ EFFECT_FAMILIES = frozenset(
 
 
 def effect_family(device: dict[str, Any], mapping: dict[str, str]) -> str | None:
-    series = str(device.get("series") or device.get("pid") or "").upper()
+    series = product_series(device)
+    if apk_product_series(device) is not None:
+        return next(
+            item["effect"] for item in PRODUCT_CONFIGS if item["series"] == series
+        )
     if series in mapping:
         candidate = mapping[series]
         return candidate if isinstance(candidate, str) else None

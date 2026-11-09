@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from typing import Any
 
+from .catalog import E1_PRODUCT_SERIES
 from .protocol import parse_wire_integer
 
 DEVICE_TYPE_LIGHT = 1
@@ -19,6 +21,22 @@ def device_type(device: dict[str, Any]) -> int | None:
             continue
         return parse_wire_integer(value)
     return None
+
+
+def apk_product_series(device: Mapping[str, Any]) -> str | None:
+    """Return a product identity verified in the APK's series catalog."""
+    identifier = parse_wire_integer(device.get("proId"))
+    if identifier is None and device.get("proId") in (None, ""):
+        identifier = parse_wire_integer(device.get("pid"))
+    return E1_PRODUCT_SERIES.get(identifier)
+
+
+def product_series(device: Mapping[str, Any]) -> str:
+    """Resolve product ID before untrusted/missing model text."""
+    return (
+        apk_product_series(device)
+        or str(device.get("series") or device.get("pid") or "").strip().upper()
+    )
 
 
 def device_name(device: dict[str, Any], fallback: str = "Lepro Device") -> str:
@@ -86,7 +104,10 @@ def device_info(
         "identifiers": {("lepro_cloud", device_id)},
         "name": device_name(device, fallback_name),
         "manufacturer": "Lepro",
-        "model": device.get("series") or device.get("pid") or "Wi-Fi device",
+        "model": apk_product_series(device)
+        or device.get("series")
+        or device.get("pid")
+        or "Wi-Fi device",
     }
     if firmware := device.get("fwVersion"):
         info["sw_version"] = str(firmware)

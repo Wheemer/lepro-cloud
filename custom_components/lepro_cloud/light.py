@@ -29,7 +29,7 @@ from .capabilities import (
 from .catalog import BULB_PRESETS, PRODUCT_CONFIGS
 from .client import LeproCoordinator
 from .const import DOMAIN
-from .device import device_info, device_type, is_light
+from .device import device_info, device_type, is_light, product_series
 from .protocol import (
     DP_BRIGHTNESS,
     DP_COLOR,
@@ -173,7 +173,7 @@ class LeproCloudLight(LightEntity):
     def _brightness_datapoint(self) -> str:
         """Select the reported brightness datapoint for this product family."""
         state = self.coordinator.states.get(self.device_id, {})
-        series = self.device.get("series") or self.device.get("pid")
+        series = product_series(self.device)
         if (
             self._uses_native_pattern
             or DP_RGBIC_BRIGHTNESS in state
@@ -201,7 +201,7 @@ class LeproCloudLight(LightEntity):
         state = self.coordinator.states.get(self.device_id, {})
         modes = set()
         picker = resolved_picker(self.device, PRODUCT_CONFIGS)
-        series = str(self.device.get("series") or self.device.get("pid") or "").upper()
+        series = product_series(self.device)
         if has_native_cct(series, picker):
             return {ColorMode.HS, ColorMode.COLOR_TEMP}
         if uses_native_rgb(series, picker):
@@ -350,17 +350,17 @@ class LeproCloudLight(LightEntity):
 
     @property
     def _uses_native_pattern(self) -> bool:
-        series = str(self.device.get("series") or self.device.get("pid") or "").upper()
+        series = product_series(self.device)
         return uses_native_rgb(series, resolved_picker(self.device, PRODUCT_CONFIGS))
 
     @property
     def _uses_pattern_white(self) -> bool:
-        series = str(self.device.get("series") or self.device.get("pid") or "").upper()
+        series = product_series(self.device)
         return uses_pattern_cct(series, resolved_picker(self.device, PRODUCT_CONFIGS))
 
     def _pattern_length(self) -> int:
         state = self.coordinator.states.get(self.device_id, {})
-        series = str(self.device.get("series") or "").upper()
+        series = product_series(self.device)
         if series.startswith("E1-") and not state.get("d53"):
             parsed = parse_rgbic_solid(state.get("d50")) or parse_rgbic_white(
                 state.get("d50")
@@ -439,13 +439,13 @@ class LeproCloudLight(LightEntity):
                 return device_brightness(
                     scene_level,
                     effect=True,
-                    series=str(self.device.get("series") or ""),
+                    series=product_series(self.device),
                     firmware=str(self.device.get("fwVersion") or ""),
                 )
             return ha_to_lepro_brightness(
                 brightness,
                 effect=effect,
-                series=str(self.device.get("series") or ""),
+                series=product_series(self.device),
                 firmware=str(self.device.get("fwVersion") or ""),
             )
 
@@ -470,7 +470,7 @@ class LeproCloudLight(LightEntity):
                         kwargs[ATTR_HS_COLOR],
                         level(effect=True),
                         self._pattern_length(),
-                        floor=str(self.device.get("series", "")).upper() == "O1",
+                        floor=product_series(self.device) == "O1",
                     )
                 )
             else:

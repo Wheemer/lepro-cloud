@@ -31,7 +31,12 @@ from .const import (
     REGION_DISCOVERY_HOST,
     REGIONS,
 )
-from .device import device_name, is_supported_device, preserve_device_name
+from .device import (
+    device_name,
+    is_supported_device,
+    preserve_device_name,
+    product_series,
+)
 from .mqtt_key import MqttKeyError, load_mqtt_private_key
 from .protocol import (
     DP_ONLINE,
@@ -288,6 +293,8 @@ class LeproApi:
                             "deviceType",
                             "devType",
                             "series",
+                            "proId",
+                            "pid",
                             "control",
                         ):
                             if update.get(field) in (None, ""):
@@ -518,8 +525,7 @@ class LeproCoordinator:
                 (
                     item
                     for item in configs
-                    if str(item.get("series", "")).upper()
-                    == str(device.get("series", "")).upper()
+                    if str(item.get("series", "")).upper() == product_series(device)
                 ),
                 {},
             )
@@ -622,6 +628,7 @@ class LeproCoordinator:
                 "fwVersion",
                 "hwVersion",
                 "series",
+                "proId",
                 "control",
                 "effect",
                 "fid",
@@ -1056,7 +1063,7 @@ class LeproCoordinator:
 
     def _state_query_datapoints(self, device: Mapping[str, Any]) -> tuple[str, ...]:
         """Use the same product-aware query for startup and recovery."""
-        series = str(device.get("series") or device.get("pid") or "")
+        series = product_series(device)
         family = effect_family(device, getattr(self, "effect_types", {}))
         extra = tuple(
             dict.fromkeys(

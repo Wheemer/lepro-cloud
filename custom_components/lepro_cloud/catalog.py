@@ -5,6 +5,10 @@ Sources: config_response.json; BasicEffectBulbLampAdapter.java:55-70.
 Only complete ordinary-scene presets are included; editor/rhythm modes are not.
 """
 
+# series_response.json contains both legacy and current E1-30 product IDs.
+# These are product identities, not device IDs or reported LED counts.
+E1_PRODUCT_SERIES = {68: "E1-30", 115: "E1-30"}
+
 PRODUCT_CONFIGS = [
     {"series": "B1", "effect": "smartbulb", "colorPicker": "rgbcw"},
     {"series": "D1", "effect": "null", "colorPicker": ""},

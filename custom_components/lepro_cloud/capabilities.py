@@ -10,6 +10,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
+from .device import apk_product_series, product_series
+
 # AIOTSeriesType.S2PaletteList. These enter PaletteRgbcwFragment, whose RGB
 # page uses native patterns and whose white page uses DpTempValue.
 CCT_STRIP_SERIES = frozenset(
@@ -98,7 +100,7 @@ def resolved_picker(
     device: Mapping[str, Any], configs: Iterable[Mapping[str, Any]]
 ) -> str | None:
     picker = device.get("_color_picker")
-    series = str(device.get("series") or device.get("pid") or "").upper()
+    series = product_series(device)
     fallback = next(
         (
             str(item["colorPicker"])
@@ -111,6 +113,10 @@ def resolved_picker(
     # An empty UI selector is not evidence that known colour hardware lost
     # its channels. SmartCommonLightActivity.F5's default is RGBcw, not a
     # power-only/dimmer palette. Retain the known native route for that model.
+    # Verified product IDs identify native eaves hardware even when a stale
+    # remote picker was derived from a different/missing series.
+    if apk_product_series(device) is not None:
+        return fallback
     if isinstance(picker, str) and (picker or not fallback):
         return picker
     return fallback
@@ -146,7 +152,7 @@ def uses_pattern_cct(series: str, picker: str | None) -> bool:
 
 
 def pattern_length(device: Mapping[str, Any], state: Mapping[str, Any]) -> int:
-    series = str(device.get("series") or device.get("pid") or "").upper()
+    series = product_series(device)
     if series == "STV1":
         try:
             return STV_LENGTHS.get(int(device.get("proId") or 0), 36)
