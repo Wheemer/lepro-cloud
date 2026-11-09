@@ -44,3 +44,17 @@ The real HA upgrade regression starts with a constructed type=2 record (which bo
 The APK's HomeDeviceAdapter.java:868-872 routes item type 1 to launchCommonMain and type 2 to launchPlug. No historical integration revision inspected converts a type=1 E1 light into a switch; the primary switch path has consistently required type=2. The original integration's light class declared BRIGHTNESS, not ONOFF.
 
 These are reproduced discovery/upgrade defects and the stale-switch scenario can leave an on/off-only entity in the user's registry. The report does not establish that Andy had a duplicate record, an earlier type=2 record or a stale switch. Do not describe this as his confirmed root cause. No release is authorized by these tests.
+
+## APK-native colour command correction
+
+The E1 diyEaves path is SmartCommonLightActivity → PaletteDIYEStringFragment / PaletteDIYStringFragment → mo13096u1 → IOTNativeUtil.getDiyMessage → native diyValue. DiyBaseFragment.m13080S1 wraps the generated scene as a d50 EffectEntity. State handling in PaletteDIYStringFragment.m14152F2 / mo13085b1 reads neon_effect (d50) and decodes it through IOTNativeUtil.diyEntity. This differs from the integration's previous generic d2=1/d5 command and d5-only colour feedback.
+
+The x86-64 libiot-core.so was extracted directly from the permanently stored 1.0.9.269 split APK. SHA256: ad917cee5a77b1fd65265ad661cb1470030449bb8e1af2e0c21ec5ff1c8bc2e3. The JNI getDiyMessage wrapper calls exported diyValue with output buffer, type, colours/count, lengths/count, speed and light mode. The native encoder was executed in Unicorn on server with libc string/formatting shims; its actual instructions assembled the pattern. It was not replaced with a Python pattern implementation.
+
+tests/fixtures/e1_native_colours.json records four native outputs for solid red, green, blue and white, one group, length 30, type 1, RGB light mode 1. The runtime Python helper is checked byte-for-byte against those APK outputs. The new real-HA regression failed first: the previous implementation sent d2=1/d5 instead of the native scene. It now sends d2=2/d50/d52.
+
+E1-30's initial DiyInfo specifies 30 units, but the APK updates length from d53. Commands therefore use a positive device-reported d53 length, or the length from a fully parsed existing native solid pattern. They never assume 25 segments or send an unverified length when neither source is available. Unknown length produces a clear error without publishing a command.
+
+Only the complete, single-group RGB solid form is decoded for a single HA colour. Multicolour, white-channel, animated and malformed patterns do not become an invented colour or fall back to stale d5 while scene mode is active. Other saved patterns remain opaque and unmodified. Brightness uses d52 without rebuilding the pattern.
+
+The correction applies to the APK's diyEaves picker; other light colour paths remain unchanged. The physical E1-30 is still untested. This establishes a concrete colour command/state defect, not proof of the reporter's missing-control cause. All research, emulation and HA tests ran on server without account login or live HA access. No release.

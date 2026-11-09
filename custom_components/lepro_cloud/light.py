@@ -18,7 +18,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .catalog import BULB_PRESETS
+from .catalog import BULB_PRESETS, PRODUCT_CONFIGS
 from .client import LeproCoordinator
 from .const import DOMAIN
 from .device import device_info, is_light
@@ -36,11 +36,13 @@ from .protocol import (
     brightness_payload,
     color_payload,
     device_brightness,
+    eaves_colour_payload,
     ha_to_lepro_brightness,
     lepro_hsv_to_hs,
     lepro_temperature_to_kelvin,
     lepro_to_ha_brightness,
     on_payload,
+    parse_eaves_solid,
     parse_lepro_hsv,
     scene_brightness,
     state_datapoints_for_series,
@@ -289,8 +291,42 @@ class LeproCloudLight(LightEntity):
         return effects
 
     @property
+    def _uses_eaves_pattern(self) -> bool:
+        picker = self.device.get("_color_picker")
+        if not isinstance(picker, str):
+            series = str(self.device.get("series") or "").upper()
+            picker = next(
+                (
+                    item["colorPicker"]
+                    for item in PRODUCT_CONFIGS
+                    if str(item["series"]).upper() == series
+                ),
+                None,
+            )
+        return picker == "diyEaves"
+
+    def _eaves_length(self) -> int:
+        state = self.coordinator.states.get(self.device_id, {})
+        length = state.get("d53")
+        if (
+            isinstance(length, int)
+            and not isinstance(length, bool)
+            and 1 <= length <= 65535
+        ):
+            return length
+        parsed = parse_eaves_solid(state.get("d50"))
+        if parsed is not None:
+            return parsed[1]
+        raise ValueError("Eaves light length is unavailable; waiting for device state")
+
+    @property
     def hs_color(self) -> tuple[float, float] | None:
-        """Return HS color from Lepro d5."""
+        """Read eaves RGB scene colour or the ordinary d5 HSV value."""
+        if self._uses_eaves_pattern and self._work_mode == WORK_MODE_SCENE:
+            parsed = parse_eaves_solid(
+                self.coordinator.states.get(self.device_id, {}).get("d50")
+            )
+            return parsed[0] if parsed is not None else None
         return lepro_hsv_to_hs(
             self.coordinator.states.get(self.device_id, {}).get(DP_COLOR)
         )
@@ -358,7 +394,14 @@ class LeproCloudLight(LightEntity):
             elif datapoint == "d6":
                 values["d6"] = scene_brightness(value, level(effect=True))
         elif ATTR_HS_COLOR in kwargs:
-            values.update(color_payload(kwargs[ATTR_HS_COLOR], brightness))
+            if self._uses_eaves_pattern:
+                values.update(
+                    eaves_colour_payload(
+                        kwargs[ATTR_HS_COLOR], level(effect=True), self._eaves_length()
+                    )
+                )
+            else:
+                values.update(color_payload(kwargs[ATTR_HS_COLOR], brightness))
         elif ATTR_COLOR_TEMP_KELVIN in kwargs:
             values.update(white_payload(brightness, kwargs[ATTR_COLOR_TEMP_KELVIN]))
         elif ATTR_BRIGHTNESS in kwargs:

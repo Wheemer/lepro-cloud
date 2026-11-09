@@ -979,6 +979,36 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
             self.co._signature(first, certs), self.co._signature(second, certs)
         )
 
+    async def test_e1_colour_matches_apk_native_pattern_and_report(self):
+        self.co.devices = {"lamp": {
+            "type": 1, "did": "lamp", "series": "E1-30", "_color_picker": "diyEaves"
+        }}
+        self.co.states["lamp"] = {
+            "online": 1, "d1": 1, "d2": 2, "d52": 700, "d53": 30,
+            "d5": "000003E803E8",
+        }
+        entity = light.LeproCloudLight(self.co, "lamp", self.co.devices["lamp"])
+        entity.hass = self.hass
+        fixtures = json.loads((Path(__file__).parent / "fixtures/e1_native_colours.json").read_text())
+        for hs, fixture in zip([(0, 100), (120, 100), (240, 100), (0, 0)], fixtures, strict=True):
+            await entity.async_turn_on(hs_color=hs, brightness=128)
+            command = self.broker.messages[-1][1]["d"]
+            self.assertEqual(command, {
+                "d1": 1, "d2": 2, "d50": fixture["payload"], "d52": 502,
+            })
+            await self.report("lamp", {"d2": 2, "d50": fixture["payload"], "d52": 502})
+            self.assertAlmostEqual(entity.hs_color[0], hs[0], places=1)
+            self.assertAlmostEqual(entity.hs_color[1], hs[1], places=1)
+            self.assertEqual(entity.brightness, 128)
+            await entity.async_turn_on(brightness=64)
+            self.assertEqual(self.broker.messages[-1][1]["d"], {
+                "d1": 1, "d2": 2, "d52": 251,
+            })
+        self.co.states["lamp"].pop("d53")
+        self.co.states["lamp"]["d50"] = "unparsed-multipart"
+        with self.assertRaisesRegex(ValueError, "length"):
+            await entity.async_turn_on(hs_color=(120, 100))
+
     async def test_duplicate_discovery_preserves_e1_identity_from_complete_record(self):
         api = client.LeproApi.__new__(client.LeproApi)
         api._request = AsyncMock(side_effect=[
@@ -1125,7 +1155,7 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
                 ])
                 for values in (
                     {"online": 1, "d1": 1},
-                    {"d2": 2, "d52": 700, "d50": "eaves-scene"},
+                    {"d2": 2, "d52": 700, "d50": "eaves-scene", "d53": 30},
                     {"d1": 0},
                     {"d1": 1, "d2": 1, "d5": "007803E803E8"},
                 ):
@@ -1142,7 +1172,9 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
                     blocking=True,
                 )
                 self.assertEqual(co.client.messages[-1][1]["d"], {
-                    "d1": 1, "d2": 1, "d5": "00F003E801F6"
+                    "d1": 1, "d2": 2,
+                    "d50": "N01:P100010000FFF210001001EU3V3000640000E1;",
+                    "d52": 502,
                 })
                 await co._refresh_session()
                 await hass.async_block_till_done()
@@ -1183,7 +1215,7 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
             co.client = Broker()
             co.connected = True
             co._fresh = {"e1"}
-            co.states = {"e1": {"online": 1, "d1": 1, "d2": 2, "d50": "saved-eaves", "d52": 1000}}
+            co.states = {"e1": {"online": 1, "d1": 1, "d2": 2, "d50": "saved-eaves", "d52": 1000, "d53": 30}}
 
         with patch.object(client.LeproCoordinator, "async_start", start):
             await hass.config_entries.async_add(entry)
@@ -1206,8 +1238,10 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
                 elif "effect" in params:
                     self.assertEqual(payload["d50"], "saved-eaves")
                 else:
-                    self.assertEqual(payload["d2"], 1)
-                    self.assertEqual(payload["d5"], "007803E803E8")
+                    self.assertEqual(payload["d2"], 2)
+                    self.assertEqual(payload["d50"], "N01:P1000100FF00F210001001EU3V3000640000E1;")
+                    self.assertEqual(payload["d52"], 1000)
+                    self.assertNotIn("d5", payload)
             self.assertTrue(await hass.config_entries.async_unload(entry.entry_id))
 
     async def test_e1_partial_metadata_cannot_remove_colour_and_saved_effects(self):
