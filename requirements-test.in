@@ -2,3 +2,6 @@
 pytest
 ruff
 aiohttp
+
+# Keep Python 3.12 compatibility dependencies in cross-version lock updates.
+typing-extensions
