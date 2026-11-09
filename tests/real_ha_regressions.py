@@ -474,6 +474,9 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
                 series == "SE1",
             )
         self.co.devices[did]["_color_picker"] = ""
+        # Missing picker metadata cannot downgrade the known S1 RGB hardware.
+        self.assertEqual(entity.supported_color_modes, {light.ColorMode.HS})
+        self.co.devices[did]["series"] = "D1"
         self.assertEqual(entity.supported_color_modes, {light.ColorMode.BRIGHTNESS})
 
     async def test_diagnostics_distinguishes_no_reply_from_rejected_state(self):
@@ -1939,7 +1942,10 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(is_supported_device({"type": 1, "control": 1}))
         self.assertTrue(is_supported_device({"type": 1, "control": 2}))
         self.assertTrue(is_supported_device({"type": 2, "control": 3}))
-        self.assertFalse(is_supported_device({"type": 1, "control": 7}))
+        for control in (6, 7):
+            self.assertTrue(is_supported_device({"type": 1, "control": control}))
+        for control in (4, 5):
+            self.assertFalse(is_supported_device({"type": 1, "control": control}))
         self.assertEqual(len(PRODUCT_CONFIGS), 70)
         for value in BULB_PRESETS.values():
             scene_brightness(value, 100)
