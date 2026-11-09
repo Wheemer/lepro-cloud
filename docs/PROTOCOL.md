@@ -73,3 +73,20 @@ Scene pages use the family context selected in the app:
 GET /v3/scene/list/fid/{family_context}/did/{did}/cid/{cursor}/limit/6/timestamp/{timestamp}.
 For shared devices this context need not equal DeviceEntity.fid. Discovery
 retains each accessible context; scene refresh/cache is scoped accordingly.
+
+## Password setup diagnostics and optional region override
+
+Email/password setup, Configure and reauthentication default to the existing
+Lepro bootstrap lookup. An optional allowlisted region override bypasses that
+lookup. Returning to Automatic removes the stored override. The existing
+bounded, allowlisted vendor redirect is still honoured; the actual resulting
+region is stored separately from the user's manual preference. App-mediated
+authorization continues to use the region supplied by the vendor session.
+
+Config-flow failures log the flow step, stage (region_lookup, server_override
+or login), actual request region when known, numeric vendor code, HTTP status
+when available, and a fixed reason label for documented authentication codes.
+Missing vendor codes/statuses are recorded as None, not invented values.
+Structured authentication metadata survives HTTP 401 and region redirects.
+Account identifiers, credentials, tokens, arbitrary exception text, vendor
+messages and request/response bodies are not written by this diagnostic.

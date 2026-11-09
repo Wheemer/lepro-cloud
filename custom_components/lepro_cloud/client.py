@@ -58,7 +58,22 @@ MQTT_KEEPALIVE = 20
 
 
 class LeproError(Exception):
-    """Base class for Lepro integration errors."""
+    """Base error with safe, structured request diagnostics."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: int | None = None,
+        http_status: int | None = None,
+        region: str | None = None,
+        reason: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.http_status = http_status
+        self.region = region
+        self.reason = reason
 
 
 class LeproAuthError(LeproError):
@@ -72,9 +87,18 @@ class LeproApiError(LeproError):
 class LeproResponseError(LeproApiError):
     """Lepro cloud returned an application-level error."""
 
-    def __init__(self, message: str, *, code: int | None = None) -> None:
-        super().__init__(message)
-        self.code = code
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: int | None = None,
+        http_status: int | None = None,
+        region: str | None = None,
+        reason: str | None = None,
+    ) -> None:
+        super().__init__(
+            message, code=code, http_status=http_status, region=region, reason=reason
+        )
 
 
 class LeproMqttError(LeproError):
@@ -117,7 +141,21 @@ class LeproApi:
         for region, host in REGIONS.items():
             if host == api_host:
                 return region
-        raise LeproResponseError("Lepro returned an unknown account region")
+        raise LeproResponseError(
+            "Lepro returned an unknown account region",
+            code=0,
+            region=bootstrap.region,
+            http_status=getattr(bootstrap, "_last_http_status", None),
+            reason="unknown_region",
+        )
+
+    @property
+    def region(self) -> str:
+        """Identify the actual allowlisted destination without logging a URL."""
+        return next(
+            (region for region, host in REGIONS.items() if host == self._host),
+            "bootstrap" if self._host == REGION_DISCOVERY_HOST else "unknown",
+        )
 
     def _headers(self) -> dict[str, str]:
         headers = {
@@ -144,6 +182,7 @@ class LeproApi:
         json_body: bool = False,
     ) -> dict[str, Any]:
         url = f"https://{self._host}{path}"
+        status = None
         try:
             async with asyncio.timeout(REQUEST_TIMEOUT):
                 response = await self._session.request(
@@ -152,31 +191,72 @@ class LeproApi:
                     **({"json": data} if json_body else {"data": data}),
                     headers=self._headers(),
                 )
+                status = response.status
+                self._last_http_status = status
                 try:
                     payload = await response.json(content_type=None)
                 except ValueError:
                     if response.status == 401:
-                        raise LeproAuthError("Lepro authentication expired") from None
+                        raise LeproAuthError(
+                            "Lepro authentication expired",
+                            http_status=401,
+                            region=self.region,
+                            reason="http_unauthorized",
+                        ) from None
                     raise
                 if response.status == 401:
-                    raise LeproAuthError("Lepro authentication expired")
+                    raise LeproAuthError(
+                        "Lepro authentication expired",
+                        code=parse_wire_integer(payload.get("code"))
+                        if isinstance(payload, dict)
+                        else None,
+                        http_status=401,
+                        region=self.region,
+                    )
         except TimeoutError as err:
-            raise LeproApiError("Timed out connecting to Lepro Cloud") from err
+            raise LeproApiError(
+                "Timed out connecting to Lepro Cloud",
+                region=self.region,
+                http_status=status,
+                reason="timeout",
+            ) from err
         except (ClientError, OSError, ValueError) as err:
-            raise LeproApiError("Lepro Cloud is unavailable") from err
+            raise LeproApiError(
+                "Lepro Cloud is unavailable",
+                region=self.region,
+                http_status=status,
+                reason="invalid_json"
+                if isinstance(err, ValueError)
+                else "network_error",
+            ) from err
 
         if not isinstance(payload, dict):
-            raise LeproApiError("Lepro Cloud returned an invalid response")
+            raise LeproApiError(
+                "Lepro Cloud returned an invalid response",
+                reason="invalid_response",
+                region=self.region,
+                http_status=status,
+            )
 
-        try:
-            code = int(payload["code"])
-        except (KeyError, TypeError, ValueError) as err:
-            raise LeproResponseError("Lepro response has no valid status code") from err
+        code = parse_wire_integer(payload.get("code"))
+        if code is None:
+            raise LeproResponseError(
+                "Lepro response has no valid status code",
+                reason="invalid_status_code",
+                region=self.region,
+                http_status=status,
+            )
         if code == -100 and not _redirected:
             region = payload.get("data")
             host = region.get("apiHost") if isinstance(region, dict) else None
             if host not in REGIONS.values():
-                raise LeproResponseError("Lepro returned an unknown account region")
+                raise LeproResponseError(
+                    "Lepro returned an unknown account region",
+                    reason="invalid_redirect",
+                    code=code,
+                    http_status=status,
+                    region=self.region,
+                )
             self._host = host
             return await self._request(
                 method, path, data, _redirected=True, json_body=json_body
@@ -192,18 +272,36 @@ class LeproApi:
             1002,
         ):
             raise LeproAuthError(
-                "Lepro authentication expired or credentials were rejected"
+                "Lepro authentication expired or credentials were rejected",
+                code=code,
+                http_status=response.status,
+                region=self.region,
             )
         if response.status >= 500:
-            raise LeproApiError(f"Lepro Cloud API error (HTTP {response.status})")
+            raise LeproApiError(
+                "Lepro Cloud API error",
+                reason="server_error",
+                code=code,
+                http_status=response.status,
+                region=self.region,
+            )
         if response.status >= 400 or code != 0:
             raise LeproResponseError(
-                f"Lepro Cloud rejected the request (code {code})", code=code
+                f"Lepro Cloud rejected the request (code {code})",
+                code=code,
+                http_status=response.status,
+                region=self.region,
             )
 
         data_value = payload.get("data")
         if not isinstance(data_value, (dict, list)):
-            raise LeproResponseError("Lepro response has no valid data")
+            raise LeproResponseError(
+                "Lepro response has no valid data",
+                reason="invalid_data",
+                code=code,
+                http_status=status,
+                region=self.region,
+            )
         return (
             data_value if isinstance(data_value, dict) else {"list": data_value or []}
         )
