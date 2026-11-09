@@ -191,3 +191,46 @@ device sent that fixture. It explains a wrong state/dimming path if that
 combination occurs; it does not prove literal controls were missing in his UI.
 Before/after wire evidence and relevant DEX dumps are stored permanently on
 server under lepro-command-audit-2026-11-09.
+
+
+## Literal on/off-only display: device-page row
+
+Source trace in HA frontend commit 283c335878daa6868fcc4a4fbc606fc9695d4dfc:
+
+1. ha-device-entities-card.ts:147–156 renders a device control via
+   entityRowElement(entity_id, name, hass).
+2. entity-row-element-directive.ts:24 constructs a normal entity row with
+   entity and name only; it supplies no custom control type.
+3. create-row-element.ts:83 maps domain light to toggle. This mapping does not
+   inspect supported_color_modes, brightness, effect_list or manufacturer.
+4. hui-toggle-entity-row.ts:44–67 renders ha-entity-toggle for on/off/unknown/
+   unavailable state, inside the generic row.
+5. hui-generic-entity-row.ts:55–58 documents the default row action as more-info.
+   The name/icon interaction opens the detailed control rather than adding
+   colour/brightness controls inline.
+6. more-info-light.ts independently renders brightness and colour controls
+   from supported_color_modes.
+
+Therefore a correctly configured full-colour E1 light can show exactly one
+on/off toggle in the device's Controls list. Both integrations use this
+default HA row. The comparative repo's additional power/speed/sensitivity
+entities add rows, not inline RGB controls to its light row.
+
+This is a confirmed matching display mechanism, not confirmation of the
+reporter's screen. His post does not identify whether he viewed that list
+or the light's more-info dialog. The source has not reproduced a correctly
+classified E1 light exporting ONOFF-only capability.
+
+The complete switch/device routing history was re-read from git. Since the
+initial commit 00f828d, primary switch creation requires plug classification;
+no inspected revision turns a type1 E1 into a primary switch. Current HA
+2026.11 LightEntity.capability_attributes exports our supported colour modes
+independently of readings and EFFECT support. Missing d50/d52 alone cannot
+remove those capabilities.
+
+No runtime code was changed for the device-row finding. Adding redundant
+control entities to compensate for the normal HA row would change the
+integration without identifying the reported fault. Actual debug/state
+evidence is needed to distinguish this display path from missing capabilities.
+The public thread already contains a request for that log; no duplicate
+request or public reply was posted by this investigation.
