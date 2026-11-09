@@ -98,10 +98,8 @@ def resolved_picker(
     device: Mapping[str, Any], configs: Iterable[Mapping[str, Any]]
 ) -> str | None:
     picker = device.get("_color_picker")
-    if isinstance(picker, str):
-        return picker
     series = str(device.get("series") or device.get("pid") or "").upper()
-    return next(
+    fallback = next(
         (
             str(item["colorPicker"])
             for item in configs
@@ -110,6 +108,12 @@ def resolved_picker(
         ),
         None,
     )
+    # An empty UI selector is not evidence that known colour hardware lost
+    # its channels. SmartCommonLightActivity.F5's default is RGBcw, not a
+    # power-only/dimmer palette. Retain the known native route for that model.
+    if isinstance(picker, str) and (picker or not fallback):
+        return picker
+    return fallback
 
 
 def uses_native_rgb(series: str, picker: str | None) -> bool:

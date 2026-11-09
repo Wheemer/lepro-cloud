@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
@@ -12,8 +13,10 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .client import LeproCoordinator
 from .const import DOMAIN
-from .device import device_info, is_plug
+from .device import device_info, device_type, is_plug
 from .protocol import on_payload, state_is_on
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -27,6 +30,12 @@ async def async_setup_entry(
     for did, device in coordinator.devices.items():
         if not _is_supported_switch(device):
             continue
+        _LOGGER.debug(
+            "Lepro switch setup: series=%s type=%s control=%s",
+            device.get("series"),
+            device_type(device),
+            device.get("control"),
+        )
         entities.append(LeproCloudPlugSwitch(coordinator, did, device))
         if _has_lock_switch(device):
             entities.extend(

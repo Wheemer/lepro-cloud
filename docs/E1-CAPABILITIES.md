@@ -60,3 +60,37 @@ E1-30's initial DiyInfo specifies 30 units, but the APK updates length from d53.
 Only the complete, single-group RGB solid form is decoded for a single HA colour. Multicolour, white-channel, animated and malformed patterns do not become an invented colour or fall back to stale d5 while scene mode is active. Other saved patterns remain opaque and unmodified. Brightness uses d52 without rebuilding the pattern.
 
 The correction applies to the APK's diyEaves picker; other light colour paths remain unchanged. The physical E1-30 is still untested. This establishes a concrete colour command/state defect, not proof of the reporter's missing-control cause. All research, emulation and HA tests ran on server without account login or live HA access. No release.
+
+
+## Direct comparative path investigation
+
+Comparison pinned to Sanji78/lepro_led commit
+444160f738a2cf501f158d1a2668e2b348e3782b. No code copied into this integration.
+
+| Stage | Comparative path | Our path and APK evidence |
+| --- | --- | --- |
+| Discovery | First family; every record creates a light | All families, type/control filter. APK DeviceEntity serializes type/control/series directly; HomeDeviceAdapter distinguishes light and plug. Keep typed routing. |
+| E1 capabilities | Always RGB, independent of metadata/reports | Released code derives capabilities from picker/reports. Server branch fixes null metadata; comparison exposed the additional blank-picker downgrade below. |
+| Blank E1 picker | Still RGB | Our branch treated blank as authoritative BRIGHTNESS. APK SmartCommonLightActivity.F5 default constructs RGBcw, not a dimmer/power-only palette. Retain known native colour profile. |
+| Startup brightness | Invented 255 until report | Our unknown reading is retained. HA brightness component renders even with unknown reading; do not invent full brightness to solve hidden controls. |
+| Power entity | Separate switch for every light | Our primary switch requires cloud type2. This difference does not establish which entity Andy used. |
+| E1 commands | Generic native pattern | Released d5 was wrong; earlier server correction uses independent APK-native d50/d52 evidence. |
+| Effects | Always advertises built-ins | App scenes and verified presets; missing scenes cannot alone erase colour or brightness controls. |
+
+Nine cases reproduced the blank-picker defect before correction: eight
+discovery-to-entity combinations (two type representations, four report states)
+and one cached-blank case. They now retain HS/CT and the native E1 writer.
+A genuine D1 empty profile remains BRIGHTNESS. This is confirmed capability
+loss, not evidence that Andy actually received blank metadata. BRIGHTNESS
+still advertises a dimmer, so it does not establish literal ONOFF-only state.
+
+New stub-only tests trace REST discovery, sparse duplicate merging, metadata,
+and light/switch entity creation. Debug setup summaries record model, normalized
+type, control, resolved picker, modes and received state-field names without
+device names, IDs or credentials. They distinguish a switch from a light whose
+metadata lost colour support when actual logs become available.
+
+Permanent comparison files:
+server:/root/codex-work/lepro-command-audit-2026-11-09/comparison.
+APK DEX: SmartCommonLightActivity-F5.dex.txt, default block 0x03b2.
+No HA instance, live HA access or release was used for this investigation.

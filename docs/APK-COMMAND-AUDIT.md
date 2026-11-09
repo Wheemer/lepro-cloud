@@ -44,7 +44,7 @@ APK paths are relative to decompiled sources/com/lepro.
 | Families and shares | data/network/api/DeviceApi.java, family | GET /family/list/timestamp/{timestamp}; every returned family queried |
 | Devices | DeviceApi.java, device | GET /v3/device/list/fid/{fid}/timestamp/{timestamp}; owning fid retained |
 | Sparse duplicates | Family merge | Known type/series/control retained when absent in later record; explicit new values authoritative |
-| Product metadata | config.series resource and bundled config_response.json | All 70 bundled records checked; null remote fields cannot erase valid capabilities |
+| Product metadata | config.series resource and bundled config_response.json | All 70 bundled records checked; null or blank remote fields cannot erase a known colour profile |
 | Saved pages | DeviceApi.java, sceneList | Correct fid/did/cid/limit/timestamp route; cursors, identity and outage cache reviewed |
 | Revoked credentials | API errors and account logout action | Reauth; no automatic password-login loop |
 | App session | Token expiry fields | Expected uid, successor token and persisted OAuth renewal retained; five-minute maintenance is HA policy |
@@ -171,3 +171,5 @@ Validation result: 119 lightweight tests pass. Existing real-HA regression
 expectations were updated for the corrected E1 white capability and app length
 fallback, but those HA tests were deliberately not executed under the current
 restriction. They remain a required later validation before release.
+
+Follow-up: direct comparative path investigation in E1-CAPABILITIES.md records a further blank-picker downgrade and its correction. Actual reporter metadata remains unknown.
