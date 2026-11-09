@@ -20,6 +20,7 @@ from .client import (
     cache_authenticated_api,
 )
 from .const import CONF_REGION, CONF_REGION_OVERRIDE, DOMAIN, REGIONS
+from .log_helpers import error_details, safe_region
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -91,36 +92,27 @@ def _log_api_error(
     flow_step: str = "unknown",
 ) -> None:
     """Log only structured metadata and locally defined error descriptions."""
-    code = getattr(error, "code", None)
-    reasons = {
-        -202: "account_not_found",
-        -203: "incorrect_password",
-        -204: "account_not_activated",
-        -205: "account_blocked",
-        -900: "token_verification_failed",
-    }
     _LOGGER.warning(
-        "Lepro Cloud config flow API error (%s): step=%s stage=%s "
-        "region=%s code=%s http_status=%s reason=%s",
-        type(error).__name__,
+        "Lepro Cloud config flow API error: step=%s stage=%s %s",
         flow_step,
         stage,
-        getattr(error, "region", None) or region or "not_resolved",
-        code,
-        getattr(error, "http_status", None),
-        getattr(error, "reason", None)
-        or reasons.get(
-            code, "no_vendor_code" if code is None else "unrecognised_vendor_code"
-        ),
+        error_details(error, region=region),
     )
 
 
 async def _resolve_login_region(hass: Any, username: str, override: str) -> str:
     """Bypass bootstrap only for an explicitly selected allowlisted region."""
     if override == "auto":
-        return await _async_account_region(hass, username)
+        selected = await _async_account_region(hass, username)
+        _LOGGER.debug(
+            "Lepro server selection: mode=automatic region=%s", safe_region(selected)
+        )
+        return selected
     if override not in REGIONS:
         raise LeproResponseError("Unsupported regional server selection")
+    _LOGGER.debug(
+        "Lepro server selection: mode=override region=%s", safe_region(override)
+    )
     return override
 
 
@@ -164,9 +156,11 @@ class LeproCloudFlow(oauth2.AbstractOAuth2FlowHandler, domain=DOMAIN):
         """Map vendor session errors without leaking callback credentials."""
         try:
             return await super().async_step_creation(user_input)
-        except LeproAuthError:
+        except LeproAuthError as err:
+            _log_api_error(err, stage="app_authorization", flow_step="creation")
             return self.async_abort(reason="invalid_auth")
-        except LeproApiError:
+        except LeproApiError as err:
+            _log_api_error(err, stage="app_authorization", flow_step="creation")
             return self.async_abort(reason="cannot_connect")
 
     async def async_oauth_create_entry(self, data: dict[str, Any]) -> dict[str, Any]:

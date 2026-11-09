@@ -6,6 +6,7 @@ This optional maintainer check never downloads an APK or contacts a device.
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import importlib.util
 import json
@@ -22,6 +23,41 @@ ROOT = Path(__file__).resolve().parents[1]
 def verify(apk: Path, decompiled: Path) -> None:
     if hashlib.sha256(apk.read_bytes()).hexdigest() != APK_SHA256:
         raise ValueError("This evidence check targets Lepro Home 1.0.9.269")
+    # Account routing uses apiHost, not country guesses or apiDeviceHost.
+    constant_nodes = ast.parse(
+        (ROOT / "custom_components/lepro_cloud/const.py").read_text()
+    ).body
+    constants = {
+        node.targets[0].id: ast.literal_eval(node.value)
+        for node in constant_nodes
+        if isinstance(node, ast.Assign)
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id in {"REGIONS", "REGION_DISCOVERY_HOST"}
+    }
+    network_root = decompiled / "sources/com/lepro"
+    region_java = next(network_root.rglob("RegionModeType.java")).read_text()
+    hosts = dict(
+        re.findall(
+            r'public static final String RELEASE_(EU|NA|FE)_HOST = "([^"]+)";',
+            region_java,
+        )
+    )
+    expected_hosts = {
+        "europe": hosts["EU"],
+        "north_america": hosts["NA"],
+        "far_east": hosts["FE"],
+    }
+    if constants["REGIONS"] != expected_hosts:
+        raise ValueError("Regional API host allowlist differs from the APK constants")
+    network_java = next(network_root.rglob("NetworkUtils.java")).read_text()
+    if f'"{constants["REGION_DISCOVERY_HOST"]}"' not in network_java:
+        raise ValueError("Bootstrap API host is not present in the APK routing source")
+    user_api = (network_root / "data/network/api/UserApi.java").read_text()
+    if (
+        '@POST("/user/region")' not in user_api
+        or '@POST("/web/token/region")' not in user_api
+    ):
+        raise ValueError("Account/app region routes differ from APK UserApi")
     path = ROOT / "custom_components/lepro_cloud/catalog.py"
     spec = importlib.util.spec_from_file_location("catalog_evidence", path)
     catalog = importlib.util.module_from_spec(spec)
@@ -45,6 +81,17 @@ def verify(apk: Path, decompiled: Path) -> None:
     }
     if catalog.E1_PRODUCT_SERIES != expected_ids:
         raise ValueError("E1 product identity map differs from the APK catalog")
+    code_java = (
+        decompiled / "sources/com/lepro/data/network/RemoteErrorCode.java"
+    ).read_text()
+    expected_codes = {
+        name: int(value)
+        for name, value in re.findall(
+            r"public static final int (CODE_[A-Z_]+) = (-?\d+);", code_java
+        )
+    }
+    if catalog.APK_ERROR_CODES != expected_codes:
+        raise ValueError("Diagnostic error-code labels differ from the APK constants")
     java = (
         decompiled
         / "sources/com/lepro/lamp/p047ui/adapter/BasicEffectBulbLampAdapter.java"
@@ -116,7 +163,7 @@ def verify(apk: Path, decompiled: Path) -> None:
     ):
         raise ValueError("Native command witnesses lack decoder results")
     print(
-        "APK hash, 70 products, d6 presets, palette lengths and 52 native witnesses verified"
+        "APK hash, regional hosts/routes, 70 products, E1 IDs, 40 error codes, d6 presets, palette lengths and 52 native witnesses verified"
     )
 
 

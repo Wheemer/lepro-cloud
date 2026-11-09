@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import logging
 import math
 import time
 from typing import Any
@@ -12,8 +13,11 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.padding import PKCS7
 from homeassistant.helpers import config_entry_oauth2_flow as oauth2
 
-from .client import LeproApi, LeproAuthError, LeproResponseError
+from .client import LeproApi, LeproAuthError, LeproError, LeproResponseError
 from .const import DOMAIN, REGION_DISCOVERY_HOST, REGIONS
+from .log_helpers import log_failure, safe_region
+
+_LOGGER = logging.getLogger(__name__)
 
 # C9860k.m18241d and the backend's authenticated /oauth2/app handler.
 APP_CLIENT_ID = "jtn2pfwl95"
@@ -28,11 +32,15 @@ _RENEWAL_MARGIN_SECONDS = 3600
 def _wrap_app_token(value: str) -> str:
     """Encode the app's thirdToken exactly as AESCipher.encrypt does."""
     if not isinstance(value, str) or not 16 <= len(value) <= 4096:
-        raise LeproAuthError("Invalid Lepro app authorization")
+        raise LeproAuthError(
+            "Invalid Lepro app authorization", reason="invalid_app_callback"
+        )
     try:
         base64.b64decode(value, validate=True)
     except (ValueError, binascii.Error):
-        raise LeproAuthError("Invalid Lepro app authorization") from None
+        raise LeproAuthError(
+            "Invalid Lepro app authorization", reason="invalid_app_callback"
+        ) from None
     padder = PKCS7(128).padder()
     padded = padder.update(value.encode()) + padder.finalize()
     encryptor = Cipher(
@@ -42,6 +50,26 @@ def _wrap_app_token(value: str) -> str:
 
 
 async def async_exchange_app_token(
+    hass: Any, app_token: str, *, expected_uid: str | None = None
+) -> dict[str, Any]:
+    """Log a safe exchange/renewal boundary, never the callback token."""
+    operation = (
+        "app_session_renewal" if expected_uid is not None else "app_authorization"
+    )
+    try:
+        result = await _async_exchange_app_token(
+            hass, app_token, expected_uid=expected_uid
+        )
+    except LeproError as err:
+        log_failure(_LOGGER, logging.DEBUG, f"Lepro {operation} failed", err)
+        raise
+    _LOGGER.debug(
+        "Lepro %s completed: region=%s", operation, safe_region(result.get("region"))
+    )
+    return result
+
+
+async def _async_exchange_app_token(
     hass: Any, app_token: str, *, expected_uid: str | None = None
 ) -> dict[str, Any]:
     """Exchange a vendor callback/renewal token and obtain its successor.
@@ -62,32 +90,62 @@ async def async_exchange_app_token(
         )
     except LeproResponseError as err:
         if err.code == -101:
-            raise LeproAuthError("Lepro app authorization was rejected") from None
+            raise LeproAuthError(
+                "Lepro app authorization was rejected",
+                code=err.code,
+                http_status=err.http_status,
+                region=err.region,
+                reason="app_authorization_rejected",
+            ) from None
         raise
     host = region_data.get("apiHost")
     region = next((key for key, value in REGIONS.items() if value == host), None)
     if region is None:
-        raise LeproResponseError("Lepro returned an unknown account region")
+        raise LeproResponseError(
+            "Lepro returned an unknown account region",
+            code=0,
+            region=api.region,
+            http_status=getattr(api, "_last_http_status", None),
+            reason="unknown_region",
+        )
     api._host = host
     body["timestamp"] = str(int(time.time()))
     try:
         login = await api._request("POST", "/web/token/refresh", body, json_body=True)
     except LeproResponseError as err:
         if err.code == -101:
-            raise LeproAuthError("Lepro app authorization was rejected") from None
+            raise LeproAuthError(
+                "Lepro app authorization was rejected",
+                code=err.code,
+                http_status=err.http_status,
+                region=err.region,
+                reason="app_authorization_rejected",
+            ) from None
         raise
     uid = str(login.get("uid") or "")
     access_token, secret = login.get("token"), login.get("secret")
     if not uid or not isinstance(access_token, str) or not access_token:
-        raise LeproAuthError("Lepro returned incomplete app credentials")
+        raise LeproAuthError(
+            "Lepro returned incomplete app credentials",
+            reason="incomplete_app_credentials",
+        )
     if not isinstance(secret, str) or not secret:
-        raise LeproAuthError("Lepro returned incomplete app credentials")
+        raise LeproAuthError(
+            "Lepro returned incomplete app credentials",
+            reason="incomplete_app_credentials",
+        )
     if expected_uid is not None and uid != str(expected_uid):
-        raise LeproAuthError("Lepro app authorization belongs to another account")
+        raise LeproAuthError(
+            "Lepro app authorization belongs to another account",
+            reason="account_identity_mismatch",
+        )
     api.token, api.uid, api.secret = access_token, uid, secret
     profile = await api.async_profile()
     if str(profile.get("uid") or "") != uid:
-        raise LeproAuthError("Lepro returned inconsistent account identity")
+        raise LeproAuthError(
+            "Lepro returned inconsistent account identity",
+            reason="account_identity_mismatch",
+        )
     account = profile.get("username")
     if not isinstance(account, str):
         account = ""
@@ -98,19 +156,26 @@ async def async_exchange_app_token(
         api_expire = int(login["expire"])
         refresh_expire = int(successor["tokenExpire"])
     except (KeyError, TypeError, ValueError, OverflowError):
-        raise LeproResponseError("Lepro returned invalid credential expiry") from None
+        raise LeproResponseError(
+            "Lepro returned invalid credential expiry",
+            reason="invalid_credential_expiry",
+        ) from None
     expires_in = (
         min(api_expire, refresh_expire) - int(time.time()) - _RENEWAL_MARGIN_SECONDS
     )
     if expires_in <= 60:
-        raise LeproResponseError("Lepro returned expired app credentials")
+        raise LeproResponseError(
+            "Lepro returned expired app credentials", reason="expired_app_credentials"
+        )
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
         "uid": uid,
         "account": account,
         "secret": secret,
-        "region": region,
+        # Token exchange/profile/renewal may migrate the API after lookup.
+        # Persist the final vendor-validated destination, not the stale first hop.
+        "region": api.region,
         "api_expires_at": api_expire,
         "refresh_expires_at": refresh_expire,
         "expires_in": expires_in,
@@ -135,7 +200,9 @@ class LeproAppOAuthImplementation(oauth2.LocalOAuth2Implementation):
     async def async_resolve_external_data(self, external_data: Any) -> dict:
         code = external_data.get("code")
         if not isinstance(code, str):
-            raise LeproAuthError("Missing Lepro app authorization")
+            raise LeproAuthError(
+                "Missing Lepro app authorization", reason="invalid_app_callback"
+            )
         # Lepro's returned URL contains raw '+' characters in its Base64 code.
         # HA's normal URL parser turns them into spaces. Restore only this code,
         # after HA has validated the signed state; never alter the state itself.
@@ -144,7 +211,9 @@ class LeproAppOAuthImplementation(oauth2.LocalOAuth2Implementation):
     async def _async_refresh_token(self, token: dict) -> dict:
         uid = token.get("uid")
         if not uid:
-            raise LeproAuthError("Missing Lepro app account identity")
+            raise LeproAuthError(
+                "Missing Lepro app account identity", reason="invalid_app_session"
+            )
         return await async_exchange_app_token(
             self.hass, token.get("refresh_token"), expected_uid=str(uid)
         )
@@ -164,14 +233,18 @@ class LeproAppApi(LeproApi):
         """Restore or renew persisted credentials without a password login."""
         token = self._entry.data.get("token")
         if not isinstance(token, dict):
-            raise LeproAuthError("Missing Lepro app session")
+            raise LeproAuthError(
+                "Missing Lepro app session", reason="invalid_app_session"
+            )
         expiry = token.get("expires_at")
         if (
             not isinstance(expiry, (int, float))
             or not math.isfinite(expiry)
             or not token.get("uid")
         ):
-            raise LeproAuthError("Invalid Lepro app session")
+            raise LeproAuthError(
+                "Invalid Lepro app session", reason="invalid_app_session"
+            )
         await self._oauth.async_ensure_token_valid()
         token = self._oauth.token
         region = token.get("region")
@@ -181,7 +254,9 @@ class LeproAppApi(LeproApi):
             or not token.get("secret")
             or not token.get("uid")
         ):
-            raise LeproAuthError("Incomplete Lepro app session")
+            raise LeproAuthError(
+                "Incomplete Lepro app session", reason="invalid_app_session"
+            )
         # Do not undo a validated -100 API-host migration on the next request.
         # A newly restored/renewed token supplies its freshly resolved region.
         if self.token != token["access_token"] or self._host == REGION_DISCOVERY_HOST:

@@ -71,6 +71,11 @@ def _load_integration_module() -> Any:
     integration_const = types.ModuleType("custom_components.lepro_cloud.const")
     integration_const.PLATFORMS = []
     integration_const.DOMAIN = "lepro_cloud"
+    integration_const.REGIONS = {
+        "europe": "api-eu-iot.lepro.com",
+        "north_america": "api-na-iot.lepro.com",
+        "far_east": "api-fe-iot.lepro.com",
+    }
 
     sys.modules["homeassistant"] = homeassistant
     sys.modules["homeassistant.config_entries"] = config_entries

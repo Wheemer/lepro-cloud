@@ -42,8 +42,8 @@ def load_mqtt_private_key() -> str:
             continue
         try:
             key = path.read_text(encoding="utf-8").strip()
-        except (OSError, UnicodeError) as err:
-            raise MqttKeyError("Unable to read Lepro Cloud's MQTT credential") from err
+        except (OSError, UnicodeError):
+            raise MqttKeyError("Unable to read Lepro Cloud's MQTT credential") from None
         if not _is_private_key_pem(key):
             raise MqttKeyError("Lepro Cloud's bundled MQTT credential is invalid")
         return f"{key}\n"

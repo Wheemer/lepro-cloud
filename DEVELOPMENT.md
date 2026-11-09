@@ -86,3 +86,12 @@ Each invocation creates its own run directory. The optional --initial-mode
 argument accepts 0, 1 or 2; --reply-suffix accepts getr, rpt, setr or
 dsr/app/getr. The test checks initial state before sending colour, so a colour
 command cannot conceal an incorrect first brightness command.
+
+### Logging and region diagnostics
+
+The [logging/region audit](docs/LOGGING-AND-REGION-AUDIT.md) records the owned
+logging surface, safe fields and account-routing evidence. Add operation
+context through log_helpers; never pass exception strings, request bodies,
+tokens, IDs, callback URLs or arbitrary metadata directly to a logger.
+Run the offline redaction and routing regressions with the hash-locked test
+dependencies. Those tests use import stubs and do not instantiate HA.
