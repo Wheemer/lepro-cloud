@@ -979,6 +979,102 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
             self.co._signature(first, certs), self.co._signature(second, certs)
         )
 
+    async def test_e1_valid_metadata_survives_discovery_partial_reports_and_reload(self):
+        hass = await self._prepare_platforms()
+        kwargs = {
+            "domain": "lepro_cloud", "title": "E1 valid metadata",
+            "data": self.entry.data, "options": {}, "source": "user",
+            "unique_id": self.entry.unique_id, "version": 1, "minor_version": 1,
+            "discovery_keys": MappingProxyType({}), "subentries_data": [],
+        }
+        entry = ConfigEntry(**{
+            key: value for key, value in kwargs.items()
+            if key in inspect.signature(ConfigEntry).parameters
+        })
+        did = "910030"
+        api = SimpleNamespace(
+            token="fixture-token", secret="fixture-secret",
+            async_profile=AsyncMock(return_value={"mqtt": {
+                "host": "fixture.invalid", "port": 8883, "root": "root", "cert": "cert"
+            }}),
+            async_devices=AsyncMock(side_effect=lambda: [{
+                "did": did, "type": 1, "control": 2, "series": "E1-30",
+                "name": "Eaves", "fid": "fixture-family",
+            }]),
+            async_product_configs=AsyncMock(return_value=[{
+                "series": "E1-30", "colorPicker": "diyEaves", "effect": "striplight"
+            }]),
+            async_device_scenes=AsyncMock(return_value=[]),
+        )
+        real_start = client.LeproCoordinator.async_start
+
+        async def start(co):
+            co.api = api
+            await real_start(co)
+
+        def transport(co, info, certs):
+            co.client = Broker()
+            co._on_connect(co.client, None, None, 0, None)
+
+        with (
+            patch.object(client.LeproCoordinator, "async_start", start),
+            patch.object(client.LeproCoordinator, "_start_mqtt", transport),
+            patch.object(client.LeproCoordinator, "_resolve_certs", AsyncMock(
+                return_value={"root": "root", "cert": "cert", "key": "key"}
+            )),
+            patch.object(client, "load_mqtt_private_key", return_value="fixture-key"),
+        ):
+            await hass.config_entries.async_add(entry)
+            await hass.async_block_till_done()
+            registry = entity_registry.async_get(hass)
+            entries = entity_registry.async_entries_for_config_entry(registry, entry.entry_id)
+            self.assertEqual({item.domain for item in entries}, {"light", "binary_sensor"})
+            entity_id = next(item.entity_id for item in entries if item.domain == "light")
+            for cycle in range(2):
+                co = entry.runtime_data
+                attrs = hass.states.get(entity_id).attributes
+                self.assertEqual(attrs["supported_color_modes"], ["hs"])
+                queries = [
+                    payload["d"] for topic, payload in co.client.messages if topic.endswith("/get")
+                ]
+                self.assertEqual(queries[0], [
+                    "online", "d1", "d2", "d3", "d4", "d5", "d50", "d52", "d53"
+                ])
+                for values in (
+                    {"online": 1, "d1": 1},
+                    {"d2": 2, "d52": 700, "d50": "eaves-scene"},
+                    {"d1": 0},
+                    {"d1": 1, "d2": 1, "d5": "007803E803E8"},
+                ):
+                    co._on_message(co.client, None, SimpleNamespace(
+                        topic=f"le/{did}/prp/rpt",
+                        payload=json.dumps({"d": values}).encode(),
+                    ))
+                    await hass.async_block_till_done()
+                    state = hass.states.get(entity_id)
+                    self.assertEqual(state.attributes["supported_color_modes"], ["hs"])
+                await hass.services.async_call(
+                    "light", "turn_on",
+                    {"entity_id": entity_id, "hs_color": [240, 100], "brightness": 128},
+                    blocking=True,
+                )
+                self.assertEqual(co.client.messages[-1][1]["d"], {
+                    "d1": 1, "d2": 1, "d5": "00F003E801F6"
+                })
+                await co._refresh_session()
+                await hass.async_block_till_done()
+                self.assertEqual(hass.states.get(entity_id).attributes["supported_color_modes"], ["hs"])
+                if cycle == 0:
+                    self.assertTrue(await hass.config_entries.async_reload(entry.entry_id))
+                    await hass.async_block_till_done()
+                    self.assertEqual(
+                        next(item.entity_id for item in entity_registry.async_entries_for_config_entry(
+                            registry, entry.entry_id
+                        ) if item.domain == "light"),
+                        entity_id,
+                    )
+            self.assertTrue(await hass.config_entries.async_unload(entry.entry_id))
+
     async def test_e1_real_platform_exposes_colour_brightness_and_effect_service(self):
         hass = await self._prepare_platforms()
         kwargs = {
