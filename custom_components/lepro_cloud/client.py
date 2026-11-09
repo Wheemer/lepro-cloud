@@ -38,6 +38,7 @@ from .protocol import (
     infer_report,
     make_get_payload,
     make_set_payload,
+    parse_wire_integer,
     state_datapoints_for_series,
     subscription_topics,
     topic_get,
@@ -1040,16 +1041,16 @@ class LeproCoordinator:
             self._request_refresh()
 
     def _command_response(self, did: str, identifier: Any, code: Any) -> None:
-        try:
-            identifier = int(identifier)
-        except (ValueError, TypeError):
+        identifier = parse_wire_integer(identifier)
+        code = parse_wire_integer(code)
+        if identifier is None or code is None:
             return
         with self._command_lock:
             pending = self._pending_commands.get(identifier)
             if pending is None or pending[0] != did:
                 return
             self._pending_commands.pop(identifier)
-        if str(code) != "0":
+        if code != 0:
             _LOGGER.warning("Lepro device rejected a command")
             self._query_device(did)
 
@@ -1226,15 +1227,8 @@ def _validated_state(state: Mapping[str, Any]) -> dict[str, Any]:
     }
     for key, value in state.items():
         if key in limits:
-            try:
-                number = int(value)
-                valid = (
-                    str(value) in {str(number), "True", "False"}
-                    and 0 <= number <= limits[key]
-                )
-            except (TypeError, ValueError, OverflowError):
-                valid = False
-            if valid:
+            number = parse_wire_integer(value, allow_bool=True)
+            if number is not None and 0 <= number <= limits[key]:
                 result[key] = number
             elif key == "online":
                 return {}

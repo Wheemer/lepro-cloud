@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .protocol import parse_wire_integer
+
 DEVICE_TYPE_LIGHT = 1
 DEVICE_TYPE_PLUG = 2
 
@@ -15,10 +17,7 @@ def device_type(device: dict[str, Any]) -> int | None:
         value = device.get(key)
         if value is None:
             continue
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return None
+        return parse_wire_integer(value)
     return None
 
 
@@ -69,7 +68,7 @@ def is_plug(device: dict[str, Any]) -> bool:
 def has_cloud_control(device: dict[str, Any]) -> bool:
     """Missing legacy metadata is tolerated; explicit BLE-only is not."""
     control = device.get("control")
-    return control is None or str(control) in {"2", "3"}
+    return control is None or parse_wire_integer(control) in {2, 3}
 
 
 def is_supported_device(device: dict[str, Any]) -> bool:

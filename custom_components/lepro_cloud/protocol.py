@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import colorsys
+import math
 import re
 from collections.abc import Collection, Mapping
 from random import randrange
@@ -114,6 +115,34 @@ def topic_get(device_id: str) -> str:
 def topic_set(device_id: str) -> str:
     """Return the Lepro property-set topic for a device."""
     return f"{MQTT_TOPIC_PREFIX}/{device_id}/prp/set"
+
+
+def parse_wire_integer(value: Any, *, allow_bool: bool = False) -> int | None:
+    """Accept finite integral JSON values as the APK's int reader does."""
+    if isinstance(value, bool):
+        return int(value) if allow_bool else None
+    if isinstance(value, int):
+        return value if -(2**31) <= value < 2**31 else None
+    if isinstance(value, str):
+        value = value.strip(" \t\r\n")
+        if re.fullmatch(
+            r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?",
+            value,
+        ) is None:
+            return None
+    elif not isinstance(value, float):
+        return None
+    try:
+        number = float(value)
+    except (ValueError, OverflowError):
+        return None
+    if (
+        not math.isfinite(number)
+        or not number.is_integer()
+        or not -(2**31) <= number < 2**31
+    ):
+        return None
+    return int(number)
 
 
 def subscription_topics(device_id: str) -> tuple[str, ...]:

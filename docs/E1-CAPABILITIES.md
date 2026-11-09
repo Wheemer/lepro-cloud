@@ -234,3 +234,31 @@ integration without identifying the reported fault. Actual debug/state
 evidence is needed to distinguish this display path from missing capabilities.
 The public thread already contains a request for that log; no duplicate
 request or public reply was posted by this investigation.
+
+### Integral numeric representations in discovery and MQTT
+
+Source comparison found another concrete compatibility gap: discovery compared
+control using its string spelling, while MQTT validation required the original
+value to spell exactly like Python's integer. Thus control 2.0 filtered out a
+Wi-Fi light, and online 1.0 discarded an entire otherwise valid state report.
+The comparative integration accepts numeric brightness via arithmetic; the APK
+Gson JsonReader.nextInt accepts integral decimal/exponent representations and
+rejects fractions or values outside signed int bounds.
+
+The correction normalizes valid integral values for device classification,
+bounded state datapoints, and command-response IDs/codes. It keeps the existing
+boolean state compatibility, but rejects boolean identities and response codes.
+A decimal success code no longer spuriously triggers a rejected-command refresh.
+Scene cursor/identity policy is unchanged by this correction.
+
+Verification: the actual MQTT callback receives a getr frame containing decimal
+online, work mode, native brightness and length, and dispatches the complete
+normalized state; fractional classification values are not truncated. All 181
+offline tests pass, as do Ruff, compilation and diff whitespace checks. These
+tests use import stubs and no Home Assistant instance or vendor account.
+
+This is a reproduced input-handling bug, not evidence that Andy received these
+numeric representations. It can explain missing discovery or discarded state;
+it does not alone explain colour controls disappearing for a correctly
+classified E1-30, whose capability declaration does not depend on MQTT values.
+No claim is made that his reported symptom is resolved.
