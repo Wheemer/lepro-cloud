@@ -94,3 +94,42 @@ Permanent comparison files:
 server:/root/codex-work/lepro-command-audit-2026-11-09/comparison.
 APK DEX: SmartCommonLightActivity-F5.dex.txt, default block 0x03b2.
 No HA instance, live HA access or release was used for this investigation.
+
+
+## Remaining E1 differences: second comparative pass
+
+The actual comparative light class was evaluated on server with its imports
+stubbed, alongside our actual light class. This did not instantiate HA, start
+MQTT or invoke device commands. Five identical E1 inputs covered no state,
+off, on, d52 brightness and a native red d50 pattern. Captured constructor
+outputs are in comparison/constructor-results.json.
+
+The pinned HA frontend capability helper bodies were evaluated against those
+outputs, retaining their actual decision logic. Both integrations expose
+brightness and colour for all five inputs after our metadata corrections.
+Results: comparison/frontend-capability-results.json.
+
+| Remaining difference | Trace and result |
+| --- | --- |
+| RGB versus HS representation | Both are HA colour-capable modes. Native red reads RGB(255,0,0) in the comparative code and HS(0,100) here. Neither representation selects ONOFF. |
+| Unknown initial brightness versus 255 | Ours remains unknown until authoritative data; comparative code defaults to 255. The actual HA brightness control renders with an undefined reading. Both still advertise brightness. |
+| Multipart pattern readback | Comparative code projects the first colour across a fixed 25-cell view. Ours does not claim a single active colour for an arbitrary multicolour effect. The actual colour picker renders even without a current colour reading. This cannot alone remove its controls. |
+| White controls | Comparative E1 exposes RGB only. APK PaletteDIYEStringFragment.initView explicitly enables RGB and white tabs; L2 returns native light mode1 or3. Our HS+CT representation follows that route. |
+| Bare power-on | Comparative non-bulb path resends a constructed pattern; our bare power request changes only d1. APK LightBaseActivity switch writer uses DpSwitchLedValue. Resending a pattern is not required to create colour controls and can overwrite an existing effect. |
+| Brightness while a scene runs | Comparative code regenerates its pattern. APK scene brightness is d52 without rebuilding d50; ours preserves the pattern. This changes command behavior, not advertised colour support. |
+| Fixed 25-cell model | Comparative default segment storage is 25, irrespective of E1-30. APK DIYString uses product/report length. Our native length path follows that evidence; no synthetic segment entities were added. |
+| Query versus creation order | Comparative code creates entities before their state request; ours can receive a report before platforms are added. New tests apply the actual coordinator report before and after entity/listener creation. Both preserve red, brightness and supported modes; later reports notify and unload removes listeners. |
+| Report filtering and availability | Comparative code accepts incoming data directly and largely exposes an always-available device. Our validated authoritative reports control availability. A valid native E1 frame is accepted in both creation orders. No validation drop reproduced missing controls. |
+| Extra entities | Comparative number.py supplies speed/sensitivity; switch.py supplies power. Those are separate from a light's brightness/colour attributes. Their presence does not establish why our reporter sees only on/off. |
+| Typed platform routing | APK AIOTDeviceType explicitly defines LIGHT=1/PLUG=2; HomeDeviceAdapter.getItemViewType returns DeviceEntity.type, then selects common light versus plug. Our typed routing matches this. Comparative unconditional light creation is not evidence to override the APK. |
+
+A native P3 warm-format investigation was also recorded in
+comparison/e1-p3-native.json. The APK recognizes P3 as a white-editor input,
+but the normal E1 white writer uses native mode3/P4. No new P3 encoder or
+invented Kelvin readback was added from incomplete evidence. This does not
+alter supported controls and is not identified as the reported cause.
+
+The exact report remains unconfirmed. No actual discovery response, entity
+attributes or debug log from Andy is available. These results eliminate
+specific remaining code-path differences; they do not prove a root cause from
+a single description or justify claiming the released E1 issue is solved.

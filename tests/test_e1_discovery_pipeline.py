@@ -136,3 +136,52 @@ def test_legacy_cached_blank_picker_cannot_erase_known_e1_colour():
         {"type": 1, "series": "E1-30", "_color_picker": ""},
     )
     assert entity.supported_color_modes == {"hs", "color_temp"}
+
+
+@pytest.mark.parametrize("report_before_entity", [False, True])
+def test_e1_initial_mqtt_report_is_not_lost_across_entity_creation(
+    report_before_entity,
+):
+    client = _load_module("client")
+    light = _load_module("light")
+    co = client.LeproCoordinator.__new__(client.LeproCoordinator)
+    co.devices = {
+        "fixture": {
+            "did": "fixture",
+            "type": 1,
+            "series": "E1-30",
+            "control": 2,
+            "_color_picker": "diyEaves",
+        }
+    }
+    co.states = {}
+    co.effect_types = {"E1-30": "striplight"}
+    co.listeners = set()
+    co._fresh = set()
+    co._stopping = False
+    co.connected = True
+    report = {
+        "online": 1,
+        "d1": 1,
+        "d2": 2,
+        "d52": 500,
+        "d53": 30,
+        "d50": "N01:P10001FF0000F210001001EU3V3000640000E1;",
+    }
+    if report_before_entity:
+        co._apply_report("fixture", report)
+    entity = light.LeproCloudLight(co, "fixture", co.devices["fixture"])
+    asyncio.run(entity.async_added_to_hass())
+    if not report_before_entity:
+        co._apply_report("fixture", report)
+        assert entity.write_count == 1
+    assert entity.supported_color_modes == {"hs", "color_temp"}
+    assert entity.brightness == 128
+    assert entity.hs_color == (0.0, 100.0)
+    assert entity.available
+    co._apply_report("fixture", {"d52": 700})
+    assert entity.brightness == 178
+    assert len(co.listeners) == 1
+    for remove in entity.remove_callbacks:
+        remove()
+    assert not co.listeners
