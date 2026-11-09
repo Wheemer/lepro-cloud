@@ -450,7 +450,19 @@ class LeproCoordinator:
             for item in remote_configs:
                 if item.get("series"):
                     series = str(item["series"]).upper()
-                    merged.setdefault(series, {}).update(item)
+                    # Optional/null remote fields must not erase APK fallback
+                    # or last-good capabilities. An empty picker is meaningful
+                    # for dimmable-only products; null is not a capability.
+                    update = {
+                        key: value
+                        for key, value in item.items()
+                        if key not in {"colorPicker", "effect"}
+                        or (
+                            isinstance(value, str)
+                            and (key == "colorPicker" or bool(value))
+                        )
+                    }
+                    merged.setdefault(series, {}).update(update)
             configs = list(merged.values())
         self._product_configs = configs
         self.effect_types = {
