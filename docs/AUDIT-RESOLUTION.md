@@ -1,3 +1,5 @@
+> Superseded for command-compatibility claims by [APK command audit](APK-COMMAND-AUDIT.md). Earlier catalog/query evidence missed native palette dispatch and saved-scene cases. Historical real-HA results below do not validate these new changes.
+
 # Audit resolution
 
 This PR includes the source fixes for the protocol and repository audit. Each
@@ -10,7 +12,7 @@ refer to `tests/real_ha_regressions.py` unless another file is named.
 | --- | --- | --- |
 | P01 | Actual negative auth codes and HTTP 401 become auth failures; permissions, throttling and bounded host migration remain separate | `test_apk_negative_auth_codes_and_non_auth_failures`, `test_http_401_is_auth_failure_even_with_non_json_body`, `test_region_migration_is_bounded_and_allowlisted` |
 | P02 | P1 memory writes 2/0; lock and indicator retain their APK encodings | `test_p1_writer_values_and_no_optimistic_confirmation` |
-| P03 | Brightness retains white, colour, scene, music and TV modes | `test_brightness_preserves_all_work_modes_with_cached_color`, `test_low_tv_brightness_and_white_readback_use_the_correct_fields` |
+| P03 | Brightness retains white, colour, scene and TV modes; unsupported ordinary music dimming is rejected | `test_brightness_preserves_all_work_modes_with_cached_color`, `test_low_tv_brightness_and_white_readback_use_the_correct_fields` |
 | P04 | d6 rewriting preserves group, timing, mode, hue and temperature; changes the correct colour/white brightness fields | `test_d6_white_and_color_units_preserve_timing_and_other_fields`, `test_d6_dimming_uses_the_scene_even_when_d52_is_cached`; group-string fixture in `test_protocol.py` |
 | P05 | Exact product-family selection and only APK-defined fallbacks | `test_family_and_scene_sources_reconcile_by_identity`; multi-family selection checks in `test_platform_devices.py` |
 | P06 | Stable scene identities reconcile embedded favorites, REST edits and deletions; optional outage retains last good data | `test_saved_scene_refresh_handles_edits_deletions_and_service_outage` |
@@ -21,7 +23,7 @@ refer to `tests/real_ha_regressions.py` unless another file is named.
 | P11 | Explicit BLE-only and unknown transports are excluded | `test_ble_only_filter_and_packaged_catalog` |
 | P12 | Both complete ordinary bulb presets are included; saved multipart patterns pass through unchanged. Rhythm parameter catalogs are not presented as ordinary scenes | `scripts/check_apk_evidence.py`, `test_saved_brightness_metadata_is_used_unless_ha_overrides_it`, TB1 multipart fixture in `test_platform_devices.py` |
 | P13 | Packaged 70-product fallback, refreshed remote metadata and last-good configuration on outage | `test_product_metadata_refresh_merges_fields_and_retains_last_good_data`, `test_remote_effect_override_does_not_fall_back_to_old_bulb_presets`, APK comparison script |
-| P14 | Scene-container d5 is separate from the outbound dp field; dispatch only supports traced d6/d50 formats | Invalid-HSV-scene and root-container fixtures in `test_platform_devices.py` |
+| P14 | Corrected: selected dp supports d3/d5/d6/d50/d52; see the new command audit | Valid-HSV-scene and root-container fixtures in `test_platform_devices.py` |
 
 ## Lifecycle and entities
 
@@ -35,7 +37,7 @@ refer to `tests/real_ha_regressions.py` unless another file is named.
 | L06 | REST siblings, executor startup, partial platform setup, timers and transport clean up on failure/cancellation | REST cancellation, cancelled-worker-failure, partial-forward failure, failed-maintenance, unload-during-reauth and cleanup cases |
 | L07 | Check startup queue results and SUBACK; eleven-device requests are exercised | Eleven-device, initial query failure, subscription rejection and real TLS cases |
 | L08 | **Corrected audit claim:** LoginActivity.java:265 trims both credentials. Existing trimming matches the APK and is retained | `test_login_input_matches_app_whitespace_trimming` in `test_config_flow_errors.py` |
-| L09 | Picker metadata plus prior native bulb capability and validated reports preserve controls; DIY pickers do not acquire temperature support from placeholder d4; malformed HSV is rejected | `test_all_known_picker_capabilities_are_stable_before_reports`; HSV boundaries in `test_protocol.py` |
+| L09 | Palette routing determines white support; placeholder d4 does not add CT to RGB-only palettes; see the new command audit | `test_all_known_picker_capabilities_are_stable_before_reports`; HSV boundaries in `test_protocol.py` |
 | L10 | Diagnostics allowlist excludes account/device identifiers, names, keys, tokens and certificates | `test_diagnostics_excludes_account_identity_and_secrets` |
 | L11 | Preserve user text and HA overrides, including an existing friendly-name prefix when discovery adds an opaque suffix | Name/factory-name cases and real registry rename/override assertions |
 

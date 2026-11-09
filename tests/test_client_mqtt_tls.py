@@ -156,7 +156,7 @@ def test_mqtt_connect_uses_the_app_qos_zero_startup_request() -> None:
     assert qos == 0
     request = json.loads(payload)
     assert isinstance(request["id"], int)
-    assert request["d"] == ["online", "d1", "d2", "d3", "d4", "d5", "d50", "d52"]
+    assert request["d"] == ["online", "d1", "d2", "d3", "d4", "d5", "d50", "d52", "d53"]
 
 
 def test_mqtt_connect_queries_scene_datapoints_for_unlisted_rgbic_series() -> None:
@@ -193,7 +193,7 @@ def test_mqtt_connect_queries_scene_datapoints_for_unlisted_rgbic_series() -> No
     coordinator._on_connect(mqtt_client, None, None, 0, None)
 
     request = json.loads(mqtt_client.publishes[0][1])
-    assert request["d"] == ["online", "d1", "d2", "d3", "d4", "d5", "d50", "d52"]
+    assert request["d"] == ["online", "d1", "d2", "d3", "d4", "d5", "d50", "d52", "d53"]
 
 
 def test_full_status_reply_marks_device_online_when_online_is_omitted() -> None:

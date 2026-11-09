@@ -60,8 +60,16 @@ does not confirm device state. A matching `setr` code `c=0` acknowledges a
 command; rejection or a missing response triggers a state query. Entities follow
 authoritative reports. Reconnection requires fresh per-device status.
 
-Brightness changes preserve the active white, colour, scene, music or TV mode.
+Brightness changes preserve the active white, colour, scene or TV mode. Ordinary-bulb music dimming requires app-specific parameters and is rejected rather than guessed.
 Standard d6 scenes rewrite unit brightness while retaining timing, hue and
 temperature. RGBIC scenes retain their complete d50 payload and use d52.
 The packaged product fallback and complete ordinary bulb presets come from
 Lepro Home 1.0.9.269. Rhythm-mode parameter catalogs are not ordinary scenes.
+
+See [the command audit](APK-COMMAND-AUDIT.md) for model routing and native commands.
+
+
+Scene pages use the family context selected in the app:
+GET /v3/scene/list/fid/{family_context}/did/{did}/cid/{cursor}/limit/6/timestamp/{timestamp}.
+For shared devices this context need not equal DeviceEntity.fid. Discovery
+retains each accessible context; scene refresh/cache is scoped accordingly.

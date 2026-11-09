@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from typing import Any
+
+from .catalog import E1_PRODUCT_SERIES
+from .protocol import parse_wire_integer
 
 DEVICE_TYPE_LIGHT = 1
 DEVICE_TYPE_PLUG = 2
@@ -15,11 +19,30 @@ def device_type(device: dict[str, Any]) -> int | None:
         value = device.get(key)
         if value is None:
             continue
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return None
+        reported = parse_wire_integer(value)
+        # Product IDs 68/115 identify light hardware in the APK catalog.
+        # A conflicting plug type must not select an on/off-only platform.
+        # Keep explicit camera/unsupported types excluded.
+        if reported == DEVICE_TYPE_PLUG and apk_product_series(device) is not None:
+            return DEVICE_TYPE_LIGHT
+        return reported
     return None
+
+
+def apk_product_series(device: Mapping[str, Any]) -> str | None:
+    """Return a product identity verified in the APK's series catalog."""
+    identifier = parse_wire_integer(device.get("proId"))
+    if identifier is None and device.get("proId") in (None, ""):
+        identifier = parse_wire_integer(device.get("pid"))
+    return E1_PRODUCT_SERIES.get(identifier)
+
+
+def product_series(device: Mapping[str, Any]) -> str:
+    """Resolve product ID before untrusted/missing model text."""
+    return (
+        apk_product_series(device)
+        or str(device.get("series") or device.get("pid") or "").strip().upper()
+    )
 
 
 def device_name(device: dict[str, Any], fallback: str = "Lepro Device") -> str:
@@ -69,7 +92,9 @@ def is_plug(device: dict[str, Any]) -> bool:
 def has_cloud_control(device: dict[str, Any]) -> bool:
     """Missing legacy metadata is tolerated; explicit BLE-only is not."""
     control = device.get("control")
-    return control is None or str(control) in {"2", "3"}
+    # APK ControlType includes MQTT in the hybrid P2P transports too.
+    # Device type is checked separately, so this does not enable cameras.
+    return control is None or parse_wire_integer(control) in {2, 3, 6, 7}
 
 
 def is_supported_device(device: dict[str, Any]) -> bool:
@@ -85,7 +110,10 @@ def device_info(
         "identifiers": {("lepro_cloud", device_id)},
         "name": device_name(device, fallback_name),
         "manufacturer": "Lepro",
-        "model": device.get("series") or device.get("pid") or "Wi-Fi device",
+        "model": apk_product_series(device)
+        or device.get("series")
+        or device.get("pid")
+        or "Wi-Fi device",
     }
     if firmware := device.get("fwVersion"):
         info["sw_version"] = str(firmware)

@@ -21,6 +21,7 @@ from aiohttp import ClientError
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from .capabilities import resolved_picker, uses_native_rgb
 from .catalog import PRODUCT_CONFIGS
 from .const import (
     APP_NAME,
@@ -30,13 +31,19 @@ from .const import (
     REGION_DISCOVERY_HOST,
     REGIONS,
 )
-from .device import device_name, is_supported_device, preserve_device_name
+from .device import (
+    device_name,
+    is_supported_device,
+    preserve_device_name,
+    product_series,
+)
 from .mqtt_key import MqttKeyError, load_mqtt_private_key
 from .protocol import (
     DP_ONLINE,
     infer_report,
     make_get_payload,
     make_set_payload,
+    parse_wire_integer,
     state_datapoints_for_series,
     subscription_topics,
     topic_get,
@@ -250,15 +257,49 @@ class LeproApi:
             for device in _as_list(result):
                 did = device.get("did")
                 if did:
-                    # The app's scene endpoint requires the owning family ID.
-                    # Discovery responses do not reliably repeat it on every
-                    # device record, so retain it while it is unambiguous.
-                    device.setdefault("fid", fid)
+                    # The app requests scenes in its selected family context,
+                    # which can differ from a shared device's owning fid.
+                    reported_fid = device.get("fid")
+                    if reported_fid in (None, ""):
+                        device["fid"] = fid
+                    device["_family_ids"] = [str(fid)]
+                    if isinstance(device.get("scenes"), list):
+                        device["scenes"] = [
+                            {**scene, "_family_id": str(fid)}
+                            for scene in device["scenes"]
+                            if isinstance(scene, dict)
+                        ]
                     key = str(did)
                     if key in devices:
-                        device["scenes"] = merge_scenes(
-                            devices[key].get("scenes", []), device.get("scenes", [])
+                        previous = devices[key]
+                        scenes = merge_scenes(
+                            previous.get("scenes", []), device.get("scenes", [])
                         )
+                        # Family listings can repeat a device with a sparse
+                        # record. Missing identity is not a type/series change.
+                        update = dict(device)
+                        update["_family_ids"] = list(
+                            dict.fromkeys(
+                                [
+                                    *previous.get("_family_ids", []),
+                                    *device["_family_ids"],
+                                ]
+                            )
+                        )
+                        if reported_fid in (None, "") and previous.get("fid"):
+                            update.pop("fid", None)
+                        for field in (
+                            "type",
+                            "deviceType",
+                            "devType",
+                            "series",
+                            "proId",
+                            "pid",
+                            "control",
+                        ):
+                            if update.get(field) in (None, ""):
+                                update.pop(field, None)
+                        device = {**previous, **update, "scenes": scenes}
                     devices[key] = device
         return list(devices.values())
 
@@ -271,7 +312,12 @@ class LeproApi:
         Scene payloads are intentionally returned unmodified: multipart RGBIC
         data is device-specific and must never be reconstructed by HA.
         """
-        fid = device.get("fid")
+        families = device.get("_family_ids")
+        fid = (
+            families[0]
+            if isinstance(families, list) and families
+            else device.get("fid")
+        )
         did = device.get("did")
         if not fid or not did:
             return []
@@ -383,6 +429,7 @@ class LeproCoordinator:
         self._mqtt_secret: str | None = None
         self._last_refresh = 0.0
         self._scene_cache: dict[str, list[dict[str, Any]]] = {}
+        self._family_scene_cache: dict[tuple[str, str], list[dict[str, Any]]] = {}
         self._reauth_requested = False
         self._fresh: set[str] = set()
         self._pending_commands: dict[int, tuple[str, float]] = {}
@@ -450,7 +497,22 @@ class LeproCoordinator:
             for item in remote_configs:
                 if item.get("series"):
                     series = str(item["series"]).upper()
-                    merged.setdefault(series, {}).update(item)
+                    # Missing/blank UI metadata cannot erase a known colour
+                    # profile. Empty remains meaningful for dimmer-only models.
+                    previous = merged.setdefault(series, {})
+                    update = {
+                        key: value
+                        for key, value in item.items()
+                        if key not in {"colorPicker", "effect"}
+                        or (
+                            isinstance(value, str)
+                            and (
+                                bool(value)
+                                or (key == "colorPicker" and not previous.get(key))
+                            )
+                        )
+                    }
+                    previous.update(update)
             configs = list(merged.values())
         self._product_configs = configs
         self.effect_types = {
@@ -463,8 +525,7 @@ class LeproCoordinator:
                 (
                     item
                     for item in configs
-                    if str(item.get("series", "")).upper()
-                    == str(device.get("series", "")).upper()
+                    if str(item.get("series", "")).upper() == product_series(device)
                 ),
                 {},
             )
@@ -567,6 +628,7 @@ class LeproCoordinator:
                 "fwVersion",
                 "hwVersion",
                 "series",
+                "proId",
                 "control",
                 "effect",
                 "fid",
@@ -633,9 +695,55 @@ class LeproCoordinator:
     async def _async_device_scenes(
         self, device: Mapping[str, Any]
     ) -> list[dict[str, Any]]:
-        """Collect every page of device saved scenes using the app cursor."""
+        """Load scenes in every discovered family context, like app selection."""
+        families = device.get("_family_ids")
+        if not isinstance(families, list) or not families:
+            async with asyncio.timeout(120):
+                return await self._collect_scene_pages(device)
+        cache = getattr(self, "_family_scene_cache", {})
+        self._family_scene_cache = cache
+        scenes: list[dict[str, Any]] = []
+        had_result = False
+        failure: LeproApiError | None = None
         async with asyncio.timeout(120):
-            return await self._collect_scene_pages(device)
+            for fid in families:
+                key = (str(device.get("did")), str(fid))
+                scoped = {**device, "_family_ids": [str(fid)]}
+                try:
+                    page = [
+                        {**scene, "_family_id": str(fid)}
+                        for scene in await self._collect_scene_pages(scoped)
+                    ]
+                except LeproAuthError:
+                    raise
+                except LeproApiError as err:
+                    if isinstance(err, LeproResponseError) and err.code == -904:
+                        # A share can allow control without scene access.
+                        _LOGGER.debug(
+                            "Lepro scene access denied in one discovered family context"
+                        )
+                        cache.pop(key, None)
+                        had_result = True
+                        continue
+                    _LOGGER.debug(
+                        "Lepro scenes unavailable in one family context; "
+                        "retaining its last good scenes when available"
+                    )
+                    failure = err
+                    if key not in cache:
+                        continue
+                    page = cache[key]
+                else:
+                    cache[key] = page
+                had_result = True
+                scenes = merge_scenes(scenes, page)
+        if not had_result and failure is not None:
+            raise failure
+        active = {(str(device.get("did")), str(fid)) for fid in families}
+        for key in list(cache):
+            if key[0] == str(device.get("did")) and key not in active:
+                cache.pop(key)
+        return scenes
 
     async def _collect_scene_pages(
         self, device: Mapping[str, Any]
@@ -775,25 +883,9 @@ class LeproCoordinator:
         for did, device in self.devices.items():
             for topic in subscription_topics(did):
                 self._check_subscription(client.subscribe(topic, qos=0))
-            series = device.get("series") or device.get("pid")
-            family = effect_family(device, getattr(self, "effect_types", {}))
-            scene_datapoints = tuple(
-                dict.fromkeys(
-                    selected[0]
-                    for scene in device.get("scenes", [])
-                    if isinstance(scene, dict)
-                    and (selected := selected_effect(scene, family)) is not None
-                )
-            )
-            if "d50" in scene_datapoints:
-                scene_datapoints += ("d52",)
             result = client.publish(
                 topic_get(did),
-                json.dumps(
-                    make_get_payload(
-                        state_datapoints_for_series(series, scene_datapoints)
-                    )
-                ),
+                json.dumps(make_get_payload(self._state_query_datapoints(device))),
                 qos=0,
             )
             if result is not None and result.rc != mqtt.MQTT_ERR_SUCCESS:
@@ -956,25 +1048,46 @@ class LeproCoordinator:
             self._request_refresh()
 
     def _command_response(self, did: str, identifier: Any, code: Any) -> None:
-        try:
-            identifier = int(identifier)
-        except (ValueError, TypeError):
+        identifier = parse_wire_integer(identifier)
+        code = parse_wire_integer(code)
+        if identifier is None or code is None:
             return
         with self._command_lock:
             pending = self._pending_commands.get(identifier)
             if pending is None or pending[0] != did:
                 return
             self._pending_commands.pop(identifier)
-        if str(code) != "0":
+        if code != 0:
             _LOGGER.warning("Lepro device rejected a command")
             self._query_device(did)
 
+    def _state_query_datapoints(self, device: Mapping[str, Any]) -> tuple[str, ...]:
+        """Use the same product-aware query for startup and recovery."""
+        series = product_series(device)
+        family = effect_family(device, getattr(self, "effect_types", {}))
+        extra = tuple(
+            dict.fromkeys(
+                selected[0]
+                for scene in device.get("scenes", [])
+                if isinstance(scene, dict)
+                and (selected := selected_effect(scene, family)) is not None
+            )
+        )
+        # MqttDpDataKt's DIY state JSON includes d50/d52/d53 even for
+        # native palette products omitted from the connection-pool series list.
+        if uses_native_rgb(series, resolved_picker(device, PRODUCT_CONFIGS)):
+            extra += ("d50", "d52", "d53")
+        elif "d50" in extra:
+            extra += ("d52",)
+        return state_datapoints_for_series(series, extra)
+
     def _query_device(self, did: str) -> None:
         if self.client and self.connected and did in self.devices:
-            series = self.devices[did].get("series")
             self.client.publish(
                 topic_get(did),
-                json.dumps(make_get_payload(state_datapoints_for_series(series))),
+                json.dumps(
+                    make_get_payload(self._state_query_datapoints(self.devices[did]))
+                ),
                 qos=0,
             )
 
@@ -1121,15 +1234,8 @@ def _validated_state(state: Mapping[str, Any]) -> dict[str, Any]:
     }
     for key, value in state.items():
         if key in limits:
-            try:
-                number = int(value)
-                valid = (
-                    str(value) in {str(number), "True", "False"}
-                    and 0 <= number <= limits[key]
-                )
-            except (TypeError, ValueError, OverflowError):
-                valid = False
-            if valid:
+            number = parse_wire_integer(value, allow_bool=True)
+            if number is not None and 0 <= number <= limits[key]:
                 result[key] = number
             elif key == "online":
                 return {}

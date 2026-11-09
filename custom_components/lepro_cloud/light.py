@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
@@ -18,10 +19,17 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .catalog import BULB_PRESETS
+from .capabilities import (
+    has_native_cct,
+    pattern_length,
+    resolved_picker,
+    uses_native_rgb,
+    uses_pattern_cct,
+)
+from .catalog import BULB_PRESETS, PRODUCT_CONFIGS
 from .client import LeproCoordinator
 from .const import DOMAIN
-from .device import device_info, is_light
+from .device import device_info, device_type, is_light, product_series
 from .protocol import (
     DP_BRIGHTNESS,
     DP_COLOR,
@@ -42,12 +50,18 @@ from .protocol import (
     lepro_to_ha_brightness,
     on_payload,
     parse_lepro_hsv,
+    parse_rgbic_solid,
+    parse_rgbic_white,
+    rgbic_colour_payload,
+    rgbic_white_payload,
     scene_brightness,
     state_datapoints_for_series,
     state_is_on,
     white_payload,
 )
 from .scenes import effect_family, saved_brightness, selected_effect
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -57,11 +71,23 @@ async def async_setup_entry(
 ) -> None:
     """Set up Lepro Cloud lights."""
     coordinator: LeproCoordinator = entry.runtime_data
-    async_add_entities(
-        LeproCloudLight(coordinator, did, device)
-        for did, device in coordinator.devices.items()
-        if _is_supported_light(device)
-    )
+    entities = []
+    for did, device in coordinator.devices.items():
+        if not _is_supported_light(device):
+            continue
+        entity = LeproCloudLight(coordinator, did, device)
+        _LOGGER.debug(
+            "Lepro light setup: series=%s type=%s control=%s picker=%r "
+            "supported_color_modes=%s state_fields=%s",
+            device.get("series"),
+            device_type(device),
+            device.get("control"),
+            resolved_picker(device, PRODUCT_CONFIGS),
+            sorted(str(mode) for mode in entity.supported_color_modes),
+            sorted(coordinator.states.get(did, {})),
+        )
+        entities.append(entity)
+    async_add_entities(entities)
 
 
 class LeproCloudLight(LightEntity):
@@ -104,6 +130,9 @@ class LeproCloudLight(LightEntity):
     def brightness(self) -> int | None:
         """Return brightness in Home Assistant scale."""
         state = self.coordinator.states.get(self.device_id, {})
+        if self._uses_pattern_white:
+            # DiyBaseFragment.H1 reads neon_bright, not ordinary d3/d5 fields.
+            return lepro_to_ha_brightness(state.get(DP_RGBIC_BRIGHTNESS))
         if self._work_mode == WORK_MODE_WHITE and DP_BRIGHTNESS in state:
             return lepro_to_ha_brightness(state[DP_BRIGHTNESS])
         if (
@@ -130,7 +159,11 @@ class LeproCloudLight(LightEntity):
                     )
                 except ValueError:
                     return None
-        if self._work_mode == WORK_MODE_COLOR:
+        if self._work_mode == WORK_MODE_COLOR or (
+            self._work_mode == WORK_MODE_SCENE
+            and self._brightness_datapoint == DP_BRIGHTNESS
+            and "d6" not in state
+        ):
             hsv = parse_lepro_hsv(state.get(DP_COLOR))
             if hsv is not None:
                 return lepro_to_ha_brightness(hsv[2])
@@ -140,9 +173,10 @@ class LeproCloudLight(LightEntity):
     def _brightness_datapoint(self) -> str:
         """Select the reported brightness datapoint for this product family."""
         state = self.coordinator.states.get(self.device_id, {})
-        series = self.device.get("series") or self.device.get("pid")
+        series = product_series(self.device)
         if (
-            DP_RGBIC_BRIGHTNESS in state
+            self._uses_native_pattern
+            or DP_RGBIC_BRIGHTNESS in state
             or DP_RGBIC_BRIGHTNESS in state_datapoints_for_series(series)
             or any(
                 datapoint == "d50" for datapoint, _value in self._scene_effects.values()
@@ -166,9 +200,12 @@ class LeproCloudLight(LightEntity):
         """Return color modes supported by currently reported datapoints."""
         state = self.coordinator.states.get(self.device_id, {})
         modes = set()
-        picker = self.device.get("_color_picker")
-        if not isinstance(picker, str):
-            picker = None
+        picker = resolved_picker(self.device, PRODUCT_CONFIGS)
+        series = product_series(self.device)
+        if has_native_cct(series, picker):
+            return {ColorMode.HS, ColorMode.COLOR_TEMP}
+        if uses_native_rgb(series, picker):
+            return {ColorMode.HS}
         if picker == "":
             return {ColorMode.BRIGHTNESS}
         if picker == "rgbcw":
@@ -207,9 +244,32 @@ class LeproCloudLight(LightEntity):
         work_mode = self._work_mode
 
         supported = self.supported_color_modes
+        if self._uses_pattern_white:
+            # E1's RGB/white tab follows the native pattern (P1 versus P4);
+            # placeholder or legacy ordinary work modes do not select d4/d5.
+            if (
+                work_mode in (WORK_MODE_WHITE, WORK_MODE_COLOR, WORK_MODE_SCENE)
+                and self._uses_pattern_white
+                and parse_rgbic_white(
+                    self.coordinator.states.get(self.device_id, {}).get("d50")
+                )
+                is not None
+            ):
+                return ColorMode.COLOR_TEMP
+            return ColorMode.HS
         if work_mode == WORK_MODE_COLOR and ColorMode.HS in supported:
             return ColorMode.HS
         if work_mode == WORK_MODE_WHITE and ColorMode.COLOR_TEMP in supported:
+            return ColorMode.COLOR_TEMP
+        if (
+            work_mode == WORK_MODE_SCENE
+            and self._uses_native_pattern
+            and parse_rgbic_white(
+                self.coordinator.states.get(self.device_id, {}).get("d50")
+            )
+            is not None
+            and ColorMode.COLOR_TEMP in supported
+        ):
             return ColorMode.COLOR_TEMP
         if ColorMode.HS in supported:
             return ColorMode.HS
@@ -289,8 +349,42 @@ class LeproCloudLight(LightEntity):
         return effects
 
     @property
+    def _uses_native_pattern(self) -> bool:
+        series = product_series(self.device)
+        return uses_native_rgb(series, resolved_picker(self.device, PRODUCT_CONFIGS))
+
+    @property
+    def _uses_pattern_white(self) -> bool:
+        series = product_series(self.device)
+        return uses_pattern_cct(series, resolved_picker(self.device, PRODUCT_CONFIGS))
+
+    def _pattern_length(self) -> int:
+        state = self.coordinator.states.get(self.device_id, {})
+        series = product_series(self.device)
+        if series.startswith("E1-") and not state.get("d53"):
+            parsed = parse_rgbic_solid(state.get("d50")) or parse_rgbic_white(
+                state.get("d50")
+            )
+            if parsed is not None:
+                return parsed[1]
+        return pattern_length(self.device, state)
+
+    @property
     def hs_color(self) -> tuple[float, float] | None:
-        """Return HS color from Lepro d5."""
+        """Read eaves RGB scene colour or the ordinary d5 HSV value."""
+        if self._uses_pattern_white or (
+            self._uses_native_pattern and self._work_mode == WORK_MODE_SCENE
+        ):
+            if self._work_mode not in (
+                WORK_MODE_WHITE,
+                WORK_MODE_COLOR,
+                WORK_MODE_SCENE,
+            ):
+                return None
+            parsed = parse_rgbic_solid(
+                self.coordinator.states.get(self.device_id, {}).get("d50")
+            )
+            return parsed[0] if parsed is not None else None
         return lepro_hsv_to_hs(
             self.coordinator.states.get(self.device_id, {}).get(DP_COLOR)
         )
@@ -298,9 +392,17 @@ class LeproCloudLight(LightEntity):
     @property
     def color_temp_kelvin(self) -> int | None:
         """Return color temperature from Lepro d4."""
-        return lepro_temperature_to_kelvin(
-            self.coordinator.states.get(self.device_id, {}).get(DP_TEMPERATURE)
-        )
+        state = self.coordinator.states.get(self.device_id, {})
+        if self._uses_pattern_white:
+            if self._work_mode not in (
+                WORK_MODE_WHITE,
+                WORK_MODE_COLOR,
+                WORK_MODE_SCENE,
+            ):
+                return None
+            parsed = parse_rgbic_white(state.get("d50"))
+            return parsed[0] if parsed is not None else None
+        return lepro_temperature_to_kelvin(state.get(DP_TEMPERATURE))
 
     @property
     def min_color_temp_kelvin(self) -> int:
@@ -337,13 +439,13 @@ class LeproCloudLight(LightEntity):
                 return device_brightness(
                     scene_level,
                     effect=True,
-                    series=str(self.device.get("series") or ""),
+                    series=product_series(self.device),
                     firmware=str(self.device.get("fwVersion") or ""),
                 )
             return ha_to_lepro_brightness(
                 brightness,
                 effect=effect,
-                series=str(self.device.get("series") or ""),
+                series=product_series(self.device),
                 firmware=str(self.device.get("fwVersion") or ""),
             )
 
@@ -355,27 +457,76 @@ class LeproCloudLight(LightEntity):
             # values and must remain byte-for-byte intact.
             if datapoint == "d50":
                 values[DP_RGBIC_BRIGHTNESS] = level(effect=True)
-            elif datapoint == "d6":
+            elif datapoint == "d6" and ATTR_BRIGHTNESS in kwargs:
                 values["d6"] = scene_brightness(value, level(effect=True))
+            elif datapoint == "d5":
+                values["d5"] = f"{value[:8]}{level(effect=True):04X}"
+            elif datapoint in {"d3", "d52"}:
+                values[datapoint] = level(effect=True)
         elif ATTR_HS_COLOR in kwargs:
-            values.update(color_payload(kwargs[ATTR_HS_COLOR], brightness))
+            if self._uses_native_pattern:
+                values.update(
+                    rgbic_colour_payload(
+                        kwargs[ATTR_HS_COLOR],
+                        level(effect=True),
+                        self._pattern_length(),
+                        floor=product_series(self.device) == "O1",
+                    )
+                )
+            else:
+                values.update(color_payload(kwargs[ATTR_HS_COLOR], brightness))
         elif ATTR_COLOR_TEMP_KELVIN in kwargs:
-            values.update(white_payload(brightness, kwargs[ATTR_COLOR_TEMP_KELVIN]))
+            if self._uses_pattern_white:
+                values.update(
+                    rgbic_white_payload(
+                        kwargs[ATTR_COLOR_TEMP_KELVIN],
+                        level(effect=True),
+                        self._pattern_length(),
+                    )
+                )
+            else:
+                values.update(white_payload(brightness, kwargs[ATTR_COLOR_TEMP_KELVIN]))
         elif ATTR_BRIGHTNESS in kwargs:
-            # Keep an active RGBIC scene in d2=2; the official app changes only d52.
-            if self._work_mode in (WORK_MODE_SCENE, 3, 5):
+            if self._uses_pattern_white and self._work_mode in (
+                WORK_MODE_WHITE,
+                WORK_MODE_COLOR,
+            ):
+                # LightBaseActivity.setBrightness calls rgbicBright(mode=2).
+                # E1/PG1 RGB and white palettes never dim via d3/d4/d5.
+                values.update(
+                    {
+                        DP_WORK_MODE: WORK_MODE_SCENE,
+                        DP_RGBIC_BRIGHTNESS: level(effect=True),
+                    }
+                )
+            # Keep active scene/music/TV modes and their existing native pattern.
+            elif self._work_mode in (WORK_MODE_SCENE, 3, 5):
+                if self._work_mode == 3 and self._brightness_datapoint == DP_BRIGHTNESS:
+                    raise ValueError(
+                        "Brightness control in app music mode is unavailable for this product"
+                    )
                 values[DP_WORK_MODE] = self._work_mode
                 if self._work_mode == WORK_MODE_SCENE and (
                     effect_family(self.device, self.coordinator.effect_types)
                     == "smartbulb"
                     or self._brightness_datapoint == DP_BRIGHTNESS
                 ):
-                    current = self.coordinator.states.get(self.device_id, {}).get("d6")
-                    if not isinstance(current, str):
-                        raise ValueError(
-                            "No valid scene data available for brightness adjustment"
-                        )
-                    values["d6"] = scene_brightness(current, level(effect=True))
+                    state = self.coordinator.states.get(self.device_id, {})
+                    active = self._scene_effects.get(self.effect)
+                    if active is not None and active[0] in {"d3", "d52"}:
+                        values[active[0]] = level(effect=True)
+                    elif (active is not None and active[0] == "d5") or (
+                        "d6" not in state
+                        and parse_lepro_hsv(state.get("d5")) is not None
+                    ):
+                        values["d5"] = f"{state['d5'][:8]}{level(effect=True):04X}"
+                    else:
+                        current = state.get("d6")
+                        if not isinstance(current, str):
+                            raise ValueError(
+                                "No valid scene data available for brightness adjustment"
+                            )
+                        values["d6"] = scene_brightness(current, level(effect=True))
                 elif self._work_mode == 5:
                     # TVModeFragment's 0–100 seekbar writes progress * 10 directly.
                     values[DP_RGBIC_BRIGHTNESS] = max(

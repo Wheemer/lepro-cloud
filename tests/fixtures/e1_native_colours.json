@@ -1,0 +1,50 @@
+[
+  {
+    "colors": [
+      4294901760
+    ],
+    "lengths": [
+      30
+    ],
+    "type": 1,
+    "speed": 50,
+    "mode": 1,
+    "payload": "N01:P10001FF0000F210001001EU3V3000640000E1;"
+  },
+  {
+    "colors": [
+      4278255360
+    ],
+    "lengths": [
+      30
+    ],
+    "type": 1,
+    "speed": 50,
+    "mode": 1,
+    "payload": "N01:P1000100FF00F210001001EU3V3000640000E1;"
+  },
+  {
+    "colors": [
+      4278190335
+    ],
+    "lengths": [
+      30
+    ],
+    "type": 1,
+    "speed": 50,
+    "mode": 1,
+    "payload": "N01:P100010000FFF210001001EU3V3000640000E1;"
+  },
+  {
+    "colors": [
+      4294967295
+    ],
+    "lengths": [
+      30
+    ],
+    "type": 1,
+    "speed": 50,
+    "mode": 1,
+    "payload": "N01:P10001FFFFFFF210001001EU3V3000640000E1;"
+  }
+]

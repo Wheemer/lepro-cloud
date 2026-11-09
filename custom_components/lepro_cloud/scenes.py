@@ -6,7 +6,8 @@ import json
 from typing import Any
 
 from .catalog import PRODUCT_CONFIGS
-from .protocol import scene_brightness
+from .device import apk_product_series, product_series
+from .protocol import parse_lepro_hsv, scene_brightness
 
 EFFECT_FAMILIES = frozenset(
     {
@@ -23,7 +24,11 @@ EFFECT_FAMILIES = frozenset(
 
 
 def effect_family(device: dict[str, Any], mapping: dict[str, str]) -> str | None:
-    series = str(device.get("series") or device.get("pid") or "").upper()
+    series = product_series(device)
+    if apk_product_series(device) is not None:
+        return next(
+            item["effect"] for item in PRODUCT_CONFIGS if item["series"] == series
+        )
     if series in mapping:
         candidate = mapping[series]
         return candidate if isinstance(candidate, str) else None
@@ -47,10 +52,18 @@ def selected_effect(
     value = scene.get(family if family in EFFECT_FAMILIES else "d5")
     if family == "striplight" and not isinstance(value, dict):
         value = scene.get("neonlight")
+    # LightBaseActivity.sceneEffect falls back to the root d5 EffectEntity
+    # when family selection returns null, after striplight -> neonlight.
+    if not isinstance(value, dict):
+        value = scene.get("d5")
     if not isinstance(value, dict):
         return None
     dp, res = value.get("dp"), value.get("res")
-    if dp not in {"d6", "d50"} or not isinstance(res, str) or not res:
+    if dp not in {"d3", "d5", "d6", "d50", "d52"} or not isinstance(res, str):
+        return None
+    if dp in {"d6", "d50"} and not res:
+        return None
+    if dp == "d5" and parse_lepro_hsv(res) is None:
         return None
     if dp == "d6":
         try:
@@ -65,6 +78,8 @@ def saved_brightness(scene: dict[str, Any], family: str | None) -> int:
     value = scene.get(family if family in EFFECT_FAMILIES else "d5")
     if family == "striplight" and not isinstance(value, dict):
         value = scene.get("neonlight")
+    if not isinstance(value, dict):
+        value = scene.get("d5")
     metadata = value.get("scene", "") if isinstance(value, dict) else ""
     if isinstance(metadata, str):
         fields = dict(
@@ -93,5 +108,16 @@ def merge_scenes(*sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 None,
             )
             identity = identifier or json.dumps(scene, sort_keys=True)
+            if scene.get("_family_id") is not None:
+                identity = f"family:{scene['_family_id']}:{identity}"
             merged[identity] = scene
-    return list(merged.values())
+    # The same catalog entry can be supplied in multiple family contexts.
+    # Keep distinct scoped edits, but do not duplicate byte-identical records.
+    unique: dict[str, dict[str, Any]] = {}
+    for scene in merged.values():
+        content = json.dumps(
+            {key: value for key, value in scene.items() if key != "_family_id"},
+            sort_keys=True,
+        )
+        unique.setdefault(content, scene)
+    return list(unique.values())
