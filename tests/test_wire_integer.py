@@ -72,3 +72,16 @@ def test_decimal_success_response_does_not_trigger_requery():
     coordinator._command_response("123", "123.0", 0.0)
     assert coordinator._pending_commands == {}
     coordinator._query_device.assert_not_called()
+
+
+@pytest.mark.parametrize("control", [2, 3, 6, 7])
+def test_apk_mqtt_control_variants_reach_light_platform(control):
+    device = _load_module("device")
+    assert device.is_light({"type": 1, "control": control, "series": "E1-30"})
+    assert not device.is_supported_device({"type": 3, "control": control})
+
+
+@pytest.mark.parametrize("control", [-1, 0, 1, 4, 5, 8])
+def test_non_mqtt_transports_are_not_cloud_lights(control):
+    device = _load_module("device")
+    assert not device.is_light({"type": 1, "control": control, "series": "E1-30"})

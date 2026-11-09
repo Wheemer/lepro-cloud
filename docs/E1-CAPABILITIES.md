@@ -262,3 +262,27 @@ numeric representations. It can explain missing discovery or discarded state;
 it does not alone explain colour controls disappearing for a correctly
 classified E1-30, whose capability declaration does not depend on MQTT values.
 No claim is made that his reported symptom is resolved.
+
+### Discovery transport gate: APK hybrid MQTT values
+
+A further source comparison found has_cloud_control accepted only values 2/3.
+APK data/room/entity/ControlType defines MQTT=2, BLE_MQTT=3,
+P2P_MQTT=6 and BLE_MQTT_P2P=7. The actual
+MqttConnectionPool$completeConnection$1 coroutine subscribes and searches
+devices whose control is greater than 1. The comparative integration does not
+filter this field at all. Our corrected gate includes the explicitly
+MQTT-capable 6/7 alongside 2/3, while retaining the separate light/plug type
+check and excluding pure BLE/P2P and cameras.
+
+This reproduces an omitted-device bug with constructed discovery records.
+No evidence establishes that E1-30 hardware actually reports control 6/7.
+It does not explain partial controls on an already-created light.
+
+The remaining direct path trace confirms: DeviceEntity serializes series,
+type and control directly; our entity creation uses only classification;
+only product-picker/state inference determines supported_color_modes.
+MQTT processing accepts the APK d-object envelope on its four subscribed
+response/report topics, merges partial state, and notifies entity listeners.
+No MQTT callback modifies device type, series or picker, and native parsing
+does not participate in capability declaration. The source still does not
+establish the reporter's actual input or exact failure.

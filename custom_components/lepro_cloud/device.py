@@ -68,7 +68,9 @@ def is_plug(device: dict[str, Any]) -> bool:
 def has_cloud_control(device: dict[str, Any]) -> bool:
     """Missing legacy metadata is tolerated; explicit BLE-only is not."""
     control = device.get("control")
-    return control is None or parse_wire_integer(control) in {2, 3}
+    # APK ControlType includes MQTT in the hybrid P2P transports too.
+    # Device type is checked separately, so this does not enable cameras.
+    return control is None or parse_wire_integer(control) in {2, 3, 6, 7}
 
 
 def is_supported_device(device: dict[str, Any]) -> bool:
