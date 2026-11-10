@@ -102,6 +102,22 @@ Open a light's controls and choose from its **Effect** selector. Compatible scen
 
 Create and edit patterns in the Lepro app, then select the saved patterns in Home Assistant. Brightness changes preserve supported running effects, including multipart patterns.
 
+### Automating favourite patterns
+
+Favourites are available through the light entity's **Effect** option in automations and scripts. In the automation editor, add a **Light: Turn on** action, select your light, then choose a favourite under **Effect**.
+
+For example, this action selects a favourite:
+
+```yaml
+action: light.turn_on
+target:
+  entity_id: light.table_lamp
+data:
+  effect: "Reading"
+```
+
+Replace `light.table_lamp` with your light's entity ID and `Reading` with the exact name shown in its Effect selector. Use **Choose** branches to select different favourites based on your automation's conditions.
+
 ### Connectivity and device settings
 
 Each supported device has a **Cloud connection** diagnostic entity. It shows the device's reported connection to Lepro; if Home Assistant loses its own cloud connection, the entity becomes unavailable. Before a device has supplied its online state, it can show unknown.
