@@ -88,6 +88,8 @@ Requires **Home Assistant 2026.4.0 or newer**.
 
 Use your **Lepro account email address and password**. Leave **Server region** on **Automatic**, or select North America, Europe or Far East if you need to override account-region detection. You can change this later through **Configure**.
 
+Lepro allows one active email/password session per account. Signing in to Home Assistant ends the app session, and signing back in to the app can disconnect Home Assistant. To keep both connected, share your devices with a second Lepro account and use that account in Home Assistant while keeping your primary account signed in on your phone.
+
 ### Sign in through the Lepro app
 
 This option is intended for accounts using Apple sign-in. Start setup on the iPhone where Lepro is installed and signed in, choose **Sign in through the Lepro app**, and follow the authorization prompts.
