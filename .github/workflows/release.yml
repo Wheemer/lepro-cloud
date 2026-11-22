@@ -46,4 +46,10 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" dist/lepro_cloud.zip --title "Lepro Cloud ${{ github.ref_name }}"
+        run: |
+          notes="docs/releases/$GITHUB_REF_NAME.md"
+          args=()
+          if [[ -f "$notes" ]]; then
+            args+=(--notes-file "$notes")
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/lepro_cloud.zip --verify-tag --title "Lepro Cloud $GITHUB_REF_NAME" "${args[@]}"
