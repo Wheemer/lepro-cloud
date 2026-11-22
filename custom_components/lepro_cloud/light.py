@@ -103,6 +103,7 @@ class LeproCloudLight(LightEntity):
         self.coordinator = coordinator
         self.device_id = device_id
         self.device = device
+        self._numeric_scene: tuple[str, str, int] | None = None
         self._attr_unique_id = f"{DOMAIN}_{device_id}"
         self._attr_device_info = device_info(device, device_id, "Lepro Light")
 
@@ -130,6 +131,10 @@ class LeproCloudLight(LightEntity):
     def brightness(self) -> int | None:
         """Return brightness in Home Assistant scale."""
         state = self.coordinator.states.get(self.device_id, {})
+        if self._work_mode == WORK_MODE_SCENE:
+            active = self._scene_effects.get(self.effect)
+            if active and active[0] in {"d3", "d52"}:
+                return lepro_to_ha_brightness(state.get(active[0]))
         if self._uses_pattern_white:
             # DiyBaseFragment.H1 reads neon_bright, not ordinary d3/d5 fields.
             return lepro_to_ha_brightness(state.get(DP_RGBIC_BRIGHTNESS))
@@ -295,8 +300,27 @@ class LeproCloudLight(LightEntity):
         """Return the selected scene when its exact payload is reported."""
         if self._work_mode != WORK_MODE_SCENE:
             return None
-        for name, (datapoint, value) in self._scene_effects.items():
-            current = self.coordinator.states.get(self.device_id, {}).get(datapoint)
+        state = self.coordinator.states.get(self.device_id, {})
+        if self._numeric_scene is not None:
+            name, dp, level = self._numeric_scene
+            if (
+                self._scene_effects.get(name, (None, None))[0] == dp
+                and state.get(dp) == level
+            ):
+                return name
+        numeric_matches = []
+        for name, (datapoint, value, level) in self._scene_entries.items():
+            current = state.get(datapoint)
+            if datapoint in {"d3", "d52"}:
+                expected = device_brightness(
+                    level,
+                    effect=True,
+                    series=product_series(self.device),
+                    firmware=str(self.device.get("fwVersion") or ""),
+                )
+                if current == expected:
+                    numeric_matches.append(name)
+                continue
             if current == value:
                 return name
             if datapoint == "d6" and isinstance(current, str):
@@ -313,13 +337,20 @@ class LeproCloudLight(LightEntity):
                 and current[:8].lower() == value[:8].lower()
             ):
                 return name
-        return None
+        return numeric_matches[0] if len(numeric_matches) == 1 else None
 
     @property
     def _scene_effects(self) -> dict[str, tuple[str, str]]:
-        """Map app-provided scene names to their verified MQTT payloads."""
+        return {
+            name: (dp, payload)
+            for name, (dp, payload, _) in self._scene_entries.items()
+        }
+
+    @property
+    def _scene_entries(self) -> dict[str, tuple[str, str, int]]:
+        """Keep each named payload with its own saved brightness."""
         effect_type = effect_family(self.device, self.coordinator.effect_types)
-        effects: dict[str, tuple[str, str]] = {}
+        effects: dict[str, tuple[str, str, int]] = {}
         scenes = self.device.get("scenes")
         if not isinstance(scenes, list):
             scenes = []
@@ -342,10 +373,10 @@ class LeproCloudLight(LightEntity):
             while name in effects:
                 name = f"{base_name} {suffix}"
                 suffix += 1
-            effects[name] = (datapoint, value)
+            effects[name] = (datapoint, value, saved_brightness(scene, effect_type))
         if effect_type == "smartbulb":
             for name, value in BULB_PRESETS.items():
-                effects.setdefault(name, ("d6", value))
+                effects.setdefault(name, ("d6", value, 1000))
         return effects
 
     @property
@@ -416,23 +447,16 @@ class LeproCloudLight(LightEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the light on."""
-        if ATTR_EFFECT in kwargs and kwargs[ATTR_EFFECT] not in self._scene_effects:
+        requested_name = kwargs.get(ATTR_EFFECT)
+        requested = self._scene_entries.get(requested_name)
+        if ATTR_EFFECT in kwargs and requested is None:
             raise ValueError("Unknown Lepro effect")
         values: dict[str, Any] = on_payload(True)
         brightness = kwargs.get(ATTR_BRIGHTNESS, self.brightness or 255)
-        scene_level = None
-        if ATTR_EFFECT in kwargs and ATTR_BRIGHTNESS not in kwargs:
-            requested = self._scene_effects[kwargs[ATTR_EFFECT]]
-            family = effect_family(self.device, self.coordinator.effect_types)
-            scene_level = next(
-                (
-                    saved_brightness(scene, family)
-                    for scene in (self.device.get("scenes") or [])
-                    if isinstance(scene, dict)
-                    and selected_effect(scene, family) == requested
-                ),
-                1000,
-            )
+        scene_level = (
+            requested[2] if requested and ATTR_BRIGHTNESS not in kwargs else None
+        )
+        numeric_scene = self._numeric_scene
 
         def level(*, effect: bool = False) -> int:
             if scene_level is not None:
@@ -449,8 +473,9 @@ class LeproCloudLight(LightEntity):
                 firmware=str(self.device.get("fwVersion") or ""),
             )
 
-        if ATTR_EFFECT in kwargs and kwargs[ATTR_EFFECT] in self._scene_effects:
-            datapoint, value = self._scene_effects[kwargs[ATTR_EFFECT]]
+        if requested is not None:
+            datapoint, value, _ = requested
+            numeric_scene = None
             values.update({DP_WORK_MODE: 2, datapoint: value})
             # The app sends scene brightness separately only for d50 RGBIC
             # payloads. All other scene datapoints already encode their own
@@ -463,7 +488,9 @@ class LeproCloudLight(LightEntity):
                 values["d5"] = f"{value[:8]}{level(effect=True):04X}"
             elif datapoint in {"d3", "d52"}:
                 values[datapoint] = level(effect=True)
+                numeric_scene = (requested_name, datapoint, values[datapoint])
         elif ATTR_HS_COLOR in kwargs:
+            numeric_scene = None
             if self._uses_native_pattern:
                 values.update(
                     rgbic_colour_payload(
@@ -476,6 +503,7 @@ class LeproCloudLight(LightEntity):
             else:
                 values.update(color_payload(kwargs[ATTR_HS_COLOR], brightness))
         elif ATTR_COLOR_TEMP_KELVIN in kwargs:
+            numeric_scene = None
             if self._uses_pattern_white:
                 values.update(
                     rgbic_white_payload(
@@ -487,7 +515,13 @@ class LeproCloudLight(LightEntity):
             else:
                 values.update(white_payload(brightness, kwargs[ATTR_COLOR_TEMP_KELVIN]))
         elif ATTR_BRIGHTNESS in kwargs:
-            if self._uses_pattern_white and self._work_mode in (
+            active_name = self.effect
+            active = self._scene_effects.get(active_name)
+            if active and active[0] in {"d3", "d52"}:
+                dp = active[0]
+                values.update({DP_WORK_MODE: WORK_MODE_SCENE, dp: level(effect=True)})
+                numeric_scene = (active_name, dp, values[dp])
+            elif self._uses_pattern_white and self._work_mode in (
                 WORK_MODE_WHITE,
                 WORK_MODE_COLOR,
             ):
@@ -512,10 +546,7 @@ class LeproCloudLight(LightEntity):
                     or self._brightness_datapoint == DP_BRIGHTNESS
                 ):
                     state = self.coordinator.states.get(self.device_id, {})
-                    active = self._scene_effects.get(self.effect)
-                    if active is not None and active[0] in {"d3", "d52"}:
-                        values[active[0]] = level(effect=True)
-                    elif (active is not None and active[0] == "d5") or (
+                    if (active is not None and active[0] == "d5") or (
                         "d6" not in state
                         and parse_lepro_hsv(state.get("d5")) is not None
                     ):
@@ -560,6 +591,8 @@ class LeproCloudLight(LightEntity):
         await self.hass.async_add_executor_job(
             self.coordinator.command, self.device_id, values
         )
+
+        self._numeric_scene = numeric_scene
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the light off."""

@@ -63,7 +63,7 @@ def test_actual_mqtt_callback_keeps_integral_decimal_report():
     asyncio.run(run())
 
 
-def test_decimal_success_response_does_not_trigger_requery():
+def test_decimal_success_response_requests_authoritative_state():
     client = _load_module("client")
     coordinator = client.LeproCoordinator.__new__(client.LeproCoordinator)
     coordinator._command_lock = threading.Lock()
@@ -71,7 +71,7 @@ def test_decimal_success_response_does_not_trigger_requery():
     coordinator._query_device = Mock()
     coordinator._command_response("123", "123.0", 0.0)
     assert coordinator._pending_commands == {}
-    coordinator._query_device.assert_not_called()
+    coordinator._query_device.assert_called_once_with("123")
 
 
 @pytest.mark.parametrize("control", [2, 3, 6, 7])

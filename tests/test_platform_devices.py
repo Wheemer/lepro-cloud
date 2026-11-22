@@ -611,3 +611,31 @@ def test_mqtt_entities_disable_home_assistant_polling() -> None:
     assert switch.LeproCloudPlugSwitch._attr_should_poll is False
     assert switch.LeproCloudStvSettingSwitch._attr_should_poll is False
     assert binary_sensor.LeproCloudConnectionSensor._attr_should_poll is False
+
+
+def test_numeric_favorites_use_named_brightness_and_survive_dimming() -> None:
+    light = _load_module("light")
+    coordinator = FakeCoordinator()
+    device = {
+        "type": 1,
+        "series": "B1",
+        "scenes": [
+            {
+                "name": name,
+                "smartbulb": {"dp": "d3", "res": "", "scene": f"brightness={level}"},
+            }
+            for name, level in (("Low", 250), ("Mid", 500))
+        ],
+    }
+    entity = light.LeproCloudLight(coordinator, "light-1", device)
+    entity.hass = FakeHass()
+    asyncio.run(entity.async_turn_on(effect="Mid"))
+    assert coordinator.commands[-1][1] == {"d1": 1, "d2": 2, "d3": 500}
+    assert entity.effect is None
+    coordinator.states["light-1"] = {"d2": 2, "d3": 500}
+    assert entity.effect == "Mid"
+    asyncio.run(entity.async_turn_on(brightness=64))
+    values = coordinator.commands[-1][1]
+    assert values == {"d1": 1, "d2": 2, "d3": 251}
+    coordinator.states["light-1"].update(values)
+    assert entity.effect == "Mid"

@@ -305,3 +305,13 @@ def test_unverified_e1_label_does_not_turn_real_plug_into_light(metadata):
     raw = {"type": 2, "control": 3, **metadata}
     assert device.is_plug(raw)
     assert not device.is_light(raw)
+
+
+@pytest.mark.parametrize(
+    "fields", [{}, {"type": "invalid"}, {"type": "", "deviceType": 1}]
+)
+def test_e1_product_id_recovers_absent_or_invalid_type(fields):
+    device = _load_module("device")
+    assert device.is_light({"proId": 68, "control": 3, **fields})
+    assert not device.is_light({"proId": 68, "control": 3, "type": "", "deviceType": 3})
+    assert not device.is_light({"proId": 68, "control": 0, **fields})

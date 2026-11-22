@@ -82,7 +82,7 @@ Requires **Home Assistant 2026.4.0 or newer**.
 1. Add your devices to your account in the newer **Lepro app**.
 2. In Home Assistant, open **Settings → Devices & services → Add integration**.
 3. Search for **Lepro Cloud**.
-4. Choose a sign-in method and complete setup.
+4. Enter your Lepro account email address and password.
 
 ### Email address and password
 
@@ -90,9 +90,14 @@ Use your **Lepro account email address and password**. Leave **Server region** o
 
 Lepro allows one active email/password session per account. Signing in to Home Assistant ends the app session, and signing back in to the app can disconnect Home Assistant. To keep both connected, share your devices with a second Lepro account and use that account in Home Assistant while keeping your primary account signed in on your phone.
 
-### Sign in through the Lepro app
+### Use a separate account for Home Assistant
 
-This option is intended for accounts using Apple sign-in. Start setup on the iPhone where Lepro is installed and signed in, choose **Sign in through the Lepro app**, and follow the authorization prompts.
+Lepro documents device sharing between two email-registered accounts in the same region. Sign in with Apple and other third-party sign-in methods are excluded in Lepro’s sharing instructions. [Lepro’s device sharing guide](https://community.lepro.com/t/add-users/282932)
+
+1. In the newer **Lepro** app, register a second account using a different email address and a password. Use the same region as the account that owns your devices. Sign in to the second account at least once.
+2. Sign in to the account that owns your devices. Open **Me → Share → +**, enter the second account’s email address, select the devices, and tap **Share**.
+3. Sign in to the second account. Open **Me**, tap the inbox in the upper right, and tap **Accept** on the invitation. Check that the shared devices appear.
+4. Sign back in to your primary account in the Lepro app. In Home Assistant, go to **Settings → Devices & services → Add integration → Lepro Cloud** and enter the second account’s email address and password. For an existing entry, use **Configure** to switch accounts.
 
 ## Using Your Devices
 
@@ -160,7 +165,6 @@ Remove account credentials, tokens and other personal information before sharing
 
 - [Release notes](https://github.com/Wheemer/lepro-cloud/releases)
 - [Protocol reference](docs/PROTOCOL.md)
-- [App authorization details](docs/app-authorization.md)
 - [Development guide](DEVELOPMENT.md)
 
 ## License

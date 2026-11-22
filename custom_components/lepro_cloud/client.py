@@ -403,15 +403,32 @@ class LeproApi:
         families = await self._request(
             "GET", f"/family/list/timestamp/{_now_seconds()}"
         )
+        self.discovery_incomplete = False
+        failure = None
+        accessible = False
         devices: dict[str, dict[str, Any]] = {}
-        for family in _as_list(families):
+        for family_index, family in enumerate(_as_list(families), 1):
             fid = family.get("fid")
             if not fid:
                 continue
-            result = await self._request(
-                "GET", f"/v3/device/list/fid/{fid}/timestamp/{_now_seconds()}"
-            )
-            for device in _as_list(result):
+            try:
+                result = await self._request(
+                    "GET", f"/v3/device/list/fid/{fid}/timestamp/{_now_seconds()}"
+                )
+                family_devices = _as_list(result)
+            except LeproApiError as err:
+                failure = err
+                self.discovery_incomplete = True
+                log_failure(
+                    _LOGGER,
+                    logging.DEBUG,
+                    "Lepro family discovery incomplete",
+                    err,
+                    family=family_index,
+                )
+                continue
+            accessible = True
+            for device in family_devices:
                 did = device.get("did")
                 if did:
                     # The app requests scenes in its selected family context,
@@ -458,6 +475,8 @@ class LeproApi:
                                 update.pop(field, None)
                         device = {**previous, **update, "scenes": scenes}
                     devices[key] = device
+        if failure is not None and not accessible:
+            raise failure
         return list(devices.values())
 
     async def async_device_scenes(
@@ -825,6 +844,8 @@ class LeproCoordinator:
         discovered = {
             str(d["did"]): d for d in devices if d.get("did") and is_supported_device(d)
         }
+        if getattr(self.api, "discovery_incomplete", False) is True:
+            discovered = {**self.devices, **discovered}
         if discovered.keys() != self.devices.keys() or any(
             self.devices[did].get(key) != device.get(key)
             for did, device in discovered.items()
@@ -855,6 +876,8 @@ class LeproCoordinator:
         for did, device in discovered.items():
             # Preserve the dict referenced by entities; replace the source scenes.
             old = self.devices[did]
+            if old is device:
+                continue
             picker = old.get("_color_picker")
             previous_name = device_name(old)
             native_temperature = old.get("_native_color_temp", False)
@@ -1273,7 +1296,10 @@ class LeproCoordinator:
                 action = payload.get("d")
                 if isinstance(action, dict):
                     self.hass.loop.call_soon_threadsafe(
-                        self._account_action, action.get("action")
+                        self._dispatch_mqtt,
+                        _client,
+                        self._account_action,
+                        action.get("action"),
                     )
                 return
             if len(parts) < 4 or parts[0] != "le" or parts[2] != "prp":
@@ -1290,7 +1316,12 @@ class LeproCoordinator:
             if "d" not in payload:
                 if "c" in payload:
                     self.hass.loop.call_soon_threadsafe(
-                        self._command_response, did, payload.get("id"), payload["c"]
+                        self._dispatch_mqtt,
+                        _client,
+                        self._command_response,
+                        did,
+                        payload.get("id"),
+                        payload["c"],
                     )
                 return
             state = payload["d"]
@@ -1303,7 +1334,10 @@ class LeproCoordinator:
                 accepted_fields = state_fields(clean)
                 filtered = len(state) - len(clean)
                 clean = infer_report(
-                    clean, get_response=parts[-1] == "getr" and did.isdigit()
+                    clean,
+                    get_response=parts[-1] == "getr"
+                    and did.isdigit()
+                    and clean.keys() != {"d6"},
                 )
                 if filtered:
                     self.hass.loop.call_soon_threadsafe(
@@ -1325,7 +1359,9 @@ class LeproCoordinator:
                     clean.get(DP_ONLINE),
                     clean.get("d2"),
                 )
-                self.hass.loop.call_soon_threadsafe(self._apply_report, did, clean)
+                self.hass.loop.call_soon_threadsafe(
+                    self._dispatch_mqtt, _client, self._apply_report, did, clean
+                )
             else:
                 self.hass.loop.call_soon_threadsafe(
                     self._record_report_filter, len(state), True
@@ -1341,6 +1377,12 @@ class LeproCoordinator:
                 "Lepro MQTT report rejected: device=%s state_not_object",
                 device_index(getattr(self, "devices", {}), did),
             )
+
+    def _dispatch_mqtt(
+        self, client: mqtt.Client, handler: Callable, *args: Any
+    ) -> None:
+        if not self._stopping and client is getattr(self, "client", None):
+            handler(*args)
 
     def _account_action(self, action: Any) -> None:
         if self._stopping:
@@ -1370,12 +1412,13 @@ class LeproCoordinator:
                 code,
                 device_details(getattr(self, "devices", {}).get(did, {})),
             )
-            self._query_device(did)
         else:
             _LOGGER.debug(
-                "Lepro command response: device=%s code=0; awaiting authoritative state",
+                "Lepro command response: device=%s code=0; requesting authoritative state",
                 device_index(getattr(self, "devices", {}), did),
             )
+
+        self._query_device(did)
 
     def _state_query_datapoints(self, device: Mapping[str, Any]) -> tuple[str, ...]:
         """Use the same product-aware query for startup and recovery."""
@@ -1391,6 +1434,8 @@ class LeproCoordinator:
         )
         # MqttDpDataKt's DIY state JSON includes d50/d52/d53 even for
         # native palette products omitted from the connection-pool series list.
+        if family == "smartbulb":
+            extra += ("d6",)
         if uses_native_rgb(series, resolved_picker(device, PRODUCT_CONFIGS)):
             extra += ("d50", "d52", "d53")
         elif "d50" in extra:
@@ -1401,11 +1446,16 @@ class LeproCoordinator:
         """Expose queue failure without logging topics or an external traceback."""
         try:
             datapoints = self._state_query_datapoints(self.devices[did])
+            # The APK's ordinary bulb status request omits d6. Query scene
+            # data separately so strict firmware can still return basic state.
+            standard = tuple(dp for dp in datapoints if dp != "d6")
             result = client.publish(
-                topic_get(did),
-                json.dumps(make_get_payload(datapoints)),
-                qos=0,
+                topic_get(did), json.dumps(make_get_payload(standard)), qos=0
             )
+            if "d6" in datapoints and (
+                result is None or result.rc == mqtt.MQTT_ERR_SUCCESS
+            ):
+                self._publish_optional_scene_query(client, did)
         except Exception as err:  # noqa: BLE001 - never expose broker/library exception text
             log_failure(
                 _LOGGER,
@@ -1428,6 +1478,21 @@ class LeproCoordinator:
             state_fields(datapoints),
         )
         return True
+
+    def _publish_optional_scene_query(self, client: mqtt.Client, did: str) -> None:
+        try:
+            result = client.publish(
+                topic_get(did), json.dumps(make_get_payload(("d6",))), qos=0
+            )
+        except Exception as err:  # noqa: BLE001 - sanitize transport exception text
+            log_failure(
+                _LOGGER, logging.DEBUG, "Lepro optional scene query failed", err
+            )
+            return
+        if result is not None and result.rc != mqtt.MQTT_ERR_SUCCESS:
+            _LOGGER.debug(
+                "Lepro optional scene query rejected: code=%s", safe_code(result.rc)
+            )
 
     def _query_device(self, did: str) -> None:
         if self.client and self.connected and did in self.devices:
@@ -1477,7 +1542,8 @@ class LeproCoordinator:
         self.states.setdefault(did, {}).update(state)
         if not hasattr(self, "_fresh"):
             self._fresh = set()
-        self._fresh.add(did)
+        if DP_ONLINE in state:
+            self._fresh.add(did)
         self._accepted_reports = getattr(self, "_accepted_reports", 0) + 1
         if self.devices.keys() <= self._fresh:
             self._cancel_initial_state_retry()

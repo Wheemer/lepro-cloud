@@ -9,6 +9,7 @@ import types
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 
 def _load_config_flow_module() -> Any:
@@ -50,6 +51,9 @@ def _load_config_flow_module() -> Any:
 
         def async_show_form(self, **kwargs: Any) -> dict[str, Any]:
             return {"type": "form", **kwargs}
+
+        def async_abort(self, **kwargs: Any) -> dict[str, Any]:
+            return {"type": "abort", **kwargs}
 
         def async_create_entry(self, **kwargs: Any) -> dict[str, Any]:
             return {"type": "create_entry", **kwargs}
@@ -505,3 +509,40 @@ def test_reauth_starts_confirmation_with_stored_username() -> None:
         "password": None,
         "region_override": "auto",
     }
+
+
+def test_legacy_app_entry_can_switch_to_email_via_configure(monkeypatch: Any) -> None:
+    module = _load_config_flow_module()
+    entry = _entry(
+        entry_id="one", username="unused", password="unused", region="europe"
+    )
+    entry.unique_id = "app:42"
+    entry.data = {
+        "auth_implementation": "lepro_cloud",
+        "token": {"uid": "42"},
+        "region": "europe",
+    }
+    entries = _ConfigEntries([entry], reconfigure_entry=entry)
+    entries.reauth_entry = entry
+    flow = module.LeproCloudFlow()
+    flow.hass = types.SimpleNamespace(config_entries=entries, data={})
+    api = types.SimpleNamespace(uid="42", region="europe", async_login=AsyncMock())
+    monkeypatch.setattr(module, "LeproApi", lambda *_args: api)
+    assert asyncio.run(flow.async_step_user())["step_id"] == "email"
+    assert (
+        asyncio.run(flow.async_step_reauth_confirm())["reason"] == "legacy_app_reauth"
+    )
+    assert asyncio.run(flow.async_step_reconfigure())["step_id"] == "reconfigure"
+    result = asyncio.run(
+        flow.async_step_reconfigure(
+            {
+                "username": "shared@example.com",
+                "password": "test",
+                "region_override": "europe",
+            }
+        )
+    )
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.unique_id == "europe:shared@example.com"
+    assert "auth_implementation" not in entry.data and "token" not in entry.data
+    assert entries.reloads == ["one"]
