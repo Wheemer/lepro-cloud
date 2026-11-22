@@ -19,9 +19,6 @@ from .log_helpers import log_failure, safe_region
 
 _LOGGER = logging.getLogger(__name__)
 
-# C9860k.m18241d and the backend's authenticated /oauth2/app handler.
-APP_CLIENT_ID = "jtn2pfwl95"
-APP_AUTHORIZE_URL = f"https://{REGION_DISCOVERY_HOST}/oauth2/app/"
 # AESCipher.java: the app wraps both community and authorization tokens with
 # AES-CBC/PKCS7, then Base64. This constant is protocol data, not a user secret.
 _APP_TOKEN_KEY = b"8devA4f0fa73jd9q"
@@ -184,29 +181,10 @@ async def _async_exchange_app_token(
 
 
 class LeproAppOAuthImplementation(oauth2.LocalOAuth2Implementation):
-    """Use HA's signed callback state with Lepro's app-owned authorization."""
+    """Renew existing app-linked entries."""
 
     def __init__(self, hass: Any) -> None:
-        super().__init__(hass, DOMAIN, APP_CLIENT_ID, "", APP_AUTHORIZE_URL, "")
-
-    @property
-    def name(self) -> str:
-        return "Lepro app"
-
-    @property
-    def extra_authorize_data(self) -> dict[str, str]:
-        return {"scope": "user"}
-
-    async def async_resolve_external_data(self, external_data: Any) -> dict:
-        code = external_data.get("code")
-        if not isinstance(code, str):
-            raise LeproAuthError(
-                "Missing Lepro app authorization", reason="invalid_app_callback"
-            )
-        # Lepro's returned URL contains raw '+' characters in its Base64 code.
-        # HA's normal URL parser turns them into spaces. Restore only this code,
-        # after HA has validated the signed state; never alter the state itself.
-        return await async_exchange_app_token(self.hass, code.replace(" ", "+"))
+        super().__init__(hass, DOMAIN, "", "", "", "")
 
     async def _async_refresh_token(self, token: dict) -> dict:
         uid = token.get("uid")

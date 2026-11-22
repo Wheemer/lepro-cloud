@@ -324,7 +324,7 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
 
         def drop_first(topic, payload, qos=0):
             result = published(topic, payload, qos)
-            if len(self.broker.messages) == 2:
+            if json.loads(payload)["d"] != ["d6"] and len(self.broker.messages) == 3:
                 self.co._on_message(
                     self.broker,
                     None,
@@ -345,7 +345,7 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
                     await asyncio.sleep(0.001)
             await self.hass.async_block_till_done()
             self.assertTrue(self.co.device_available(did))
-            self.assertEqual(len(self.broker.messages), 2)
+            self.assertEqual(len(self.broker.messages), 4)
             self.assertTrue(
                 all(topic.endswith("/get") for topic, _ in self.broker.messages)
             )
@@ -356,10 +356,10 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(client, "REQUEST_TIMEOUT", 0.005):
             self.co._on_connect(self.broker, None, None, 0, None)
             async with asyncio.timeout(2):
-                while len(self.broker.messages) < 3:
+                while len(self.broker.messages) < 6:
                     await asyncio.sleep(0.001)
             await self.hass.async_block_till_done()
-            self.assertEqual(len(self.broker.messages), 3)
+            self.assertEqual(len(self.broker.messages), 6)
             self.assertEqual(self.co._state_query_retries, 2)
             self.assertIsNone(self.co._initial_state_timer)
         self.co._on_connect(self.broker, None, None, 0, None)
@@ -735,6 +735,8 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
                     break
             return bytes([0x30, *encoded]) + body
 
+        reported = {"d1": 1, "d2": 0, "d3": 500}
+
         async def broker(reader, writer):
             tasks.add(asyncio.current_task())
             connections.append(writer)
@@ -773,20 +775,16 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
                                     {
                                         "id": data["id"],
                                         "c": 200,  # d-bearing envelope is still state.
-                                        "d": {"d1": 1, "d2": 0, "d3": 500},
+                                        "d": reported,
                                     },
                                 )
                             )
                         elif topic.endswith("/set"):
+                            reported.update(data["d"])
                             writer.write(
                                 frame(
                                     topic + "r",
                                     {"id": data["id"], "c": 0},
-                                )
-                            )
-                            writer.write(
-                                frame(
-                                    topic.rsplit("/", 1)[0] + "/rpt", {"d": data["d"]}
                                 )
                             )
                     elif kind == 14:
@@ -1486,7 +1484,7 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
         await self.hass.async_block_till_done()
         self.assertFalse(self.co.connected)
 
-    async def test_bulb_startup_query_matches_apk_without_scene_write_datapoints(self):
+    async def test_bulb_startup_query_adds_state_for_builtin_presets(self):
         for series in ("B1", "SE1"):
             self.broker.messages.clear()
             self.co.devices = {
@@ -1500,8 +1498,9 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
                 for topic, payload in self.broker.messages
                 if topic.endswith("/get")
             ]
-            self.assertEqual(len(queries), 1)
-            self.assertEqual(queries[0]["d"], ["online", "d1", "d2", "d3", "d4", "d5"])
+            self.assertEqual([query["d"] for query in queries], [
+                ["online", "d1", "d2", "d3", "d4", "d5"], ["d6"],
+            ])
 
     async def test_initial_query_failure_marks_transport_unready(self):
         self.broker.publish = lambda *args, **kwargs: SimpleNamespace(rc=1)
@@ -1779,7 +1778,7 @@ class OfflineRegressionTests(unittest.IsolatedAsyncioTestCase):
         self.co.api.secret = "fixture-secret"
         self.co._on_connect(self.broker, None, None, 0, None)
         await asyncio.sleep(0)
-        self.assertEqual(len(self.broker.messages), 11)
+        self.assertEqual(len(self.broker.messages), 22)
         self.assertEqual(len(self.broker.subscriptions), 45)
         self.assertIn("le/fixture-secret/act/app/exe", self.broker.subscriptions)
         self.assertTrue(all(t.endswith("/get") for t, _ in self.broker.messages))

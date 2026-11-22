@@ -13,8 +13,7 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, PropertyMock, patch
-from urllib.parse import parse_qs, urlsplit
+from unittest.mock import AsyncMock, Mock, patch
 
 sys.path.insert(0, "/source")
 from homeassistant.core import HomeAssistant
@@ -111,36 +110,6 @@ class AppAuthTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(profile_request[2]["headers"]["token"], "new-bearer")
         self.assertEqual(successor_request[2]["headers"]["token"], "new-bearer")
         self.assertFalse(any("password" in str(r[2]) for r in session.requests))
-
-    async def test_callback_preserves_base64_plus_after_standard_query_parsing(self):
-        parsed = parse_qs("code=" + APP_TOKEN)["code"][0]
-        self.assertIn(" ", parsed)
-        impl = app_auth.LeproAppOAuthImplementation(self.hass)
-        state = {"flow_id": "test-flow", "redirect_uri": "https://ha.invalid/callback"}
-        with patch.object(
-            app_auth, "async_exchange_app_token", new_callable=AsyncMock
-        ) as exchange:
-            await impl.async_resolve_external_data({"code": parsed, "state": state})
-            exchange.assert_awaited_once_with(self.hass, APP_TOKEN)
-        self.assertEqual(state["flow_id"], "test-flow")
-
-    async def test_authorize_url_contains_registered_id_and_signed_state(self):
-        impl = app_auth.LeproAppOAuthImplementation(self.hass)
-        with patch.object(
-            type(impl),
-            "redirect_uri",
-            new_callable=PropertyMock,
-            return_value="https://my.home-assistant.io/redirect/oauth",
-        ):
-            url = await impl.async_generate_authorize_url("test-flow")
-        parsed = urlsplit(url)
-        query = parse_qs(parsed.query)
-        self.assertEqual(parsed.path, "/oauth2/app/")
-        self.assertEqual(query["client_id"], [app_auth.APP_CLIENT_ID])
-        self.assertEqual(query["response_type"], ["code"])
-        self.assertEqual(query["scope"], ["user"])
-        self.assertNotEqual(query["state"], ["test-flow"])
-        self.assertNotIn("client_secret", query)
 
     async def test_unknown_region_stops_before_credentials_are_sent(self):
         session = Session([Response({"apiHost": "attacker.invalid"})])
@@ -239,83 +208,6 @@ class AppAuthTests(unittest.IsolatedAsyncioTestCase):
                 await api.async_restore_session()
             update.assert_not_called()
         self.assertIs(entry.data["token"], original)
-
-    async def test_email_and_app_choices_and_app_confirmation(self):
-        flow = config_flow.LeproCloudFlow()
-        flow.hass = self.hass
-        result = await flow.async_step_user()
-        self.assertEqual(result["type"], "menu")
-        self.assertEqual(result["menu_options"], ["email", "app"])
-        result = await flow.async_step_email()
-        self.assertEqual(result["step_id"], "email")
-        result = await flow.async_step_app()
-        self.assertEqual(result["step_id"], "app")
-        with patch.object(
-            app_auth.LeproAppOAuthImplementation,
-            "redirect_uri",
-            new_callable=PropertyMock,
-            return_value="https://ha.invalid/auth/external/callback",
-        ):
-            result = await flow.async_step_app({})
-        self.assertEqual(result["type"], "external")
-        self.assertEqual(result["step_id"], "auth")
-
-    async def test_app_reauth_rejects_a_different_uid(self):
-        flow = config_flow.LeproCloudFlow()
-        flow.hass = self.hass
-        flow.context = {"source": "reauth"}
-        entry = SimpleNamespace(data={"token": {"uid": "original"}})
-        with patch.object(flow, "_get_reauth_entry", return_value=entry):
-            result = await flow.async_oauth_create_entry({"token": {"uid": "other"}})
-        self.assertEqual(result["reason"], "wrong_account")
-
-    async def test_app_reauth_and_reconfigure_show_app_confirmation(self):
-        for source, method in [
-            ("reauth", "async_step_reauth_confirm"),
-            ("reconfigure", "async_step_reconfigure"),
-        ]:
-            flow = config_flow.LeproCloudFlow()
-            flow.hass = self.hass
-            entry = SimpleNamespace(data={"auth_implementation": "lepro_cloud"})
-            getter = (
-                "_get_reauth_entry" if source == "reauth" else "_get_reconfigure_entry"
-            )
-            with patch.object(flow, getter, return_value=entry):
-                result = await getattr(flow, method)()
-            self.assertEqual(result["step_id"], "app")
-
-    async def test_flow_creation_persists_app_tokens_and_region_without_password(self):
-        session = Session(exchange_responses())
-        token = await self.exchange(session)
-        flow = config_flow.LeproCloudFlow()
-        flow.hass = self.hass
-        flow.flow_id = "new-app-flow"
-        flow.context = {"source": "user"}
-        flow.external_data = {"code": APP_TOKEN}
-        flow.flow_impl = SimpleNamespace(
-            domain="lepro_cloud",
-            async_resolve_external_data=AsyncMock(return_value=token),
-        )
-        result = await flow.async_step_creation()
-        self.assertEqual(result["type"], "create_entry")
-        self.assertEqual(result["data"]["region"], "europe")
-        self.assertEqual(result["data"]["auth_implementation"], "lepro_cloud")
-        self.assertIn("refresh_token", result["data"]["token"])
-        self.assertNotIn("password", result["data"])
-        self.assertGreater(result["data"]["token"]["expires_at"], time.time())
-
-    async def test_creation_maps_rejected_callback_without_logging_credentials(self):
-        flow = config_flow.LeproCloudFlow()
-        flow.hass = self.hass
-        flow.external_data = {"code": APP_TOKEN}
-        flow.flow_impl = SimpleNamespace(
-            async_resolve_external_data=AsyncMock(
-                side_effect=client.LeproAuthError("Invalid app code")
-            )
-        )
-        result = await flow.async_step_creation()
-        self.assertEqual(result["type"], "abort")
-        self.assertEqual(result["reason"], "invalid_auth")
 
     async def test_rejected_code_and_throttling_have_distinct_recovery(self):
         for code, expected in [
@@ -599,28 +491,6 @@ class AppAuthTests(unittest.IsolatedAsyncioTestCase):
             result = await flow.async_step_email(
                 {"username": "person@example.invalid", "password": "unused"}
             )
-        self.assertEqual(result["reason"], "already_configured")
-
-    async def test_app_flow_does_not_duplicate_a_legacy_email_account(self):
-        flow = config_flow.LeproCloudFlow()
-        flow.hass = self.hass
-        flow.context = {"source": "user"}
-        token = {
-            "uid": "account",
-            "region": "europe",
-            "account": "person@example.invalid",
-        }
-        with (
-            patch.object(
-                flow, "async_set_unique_id", new_callable=AsyncMock, return_value=None
-            ),
-            patch.object(
-                self.hass.config_entries,
-                "async_entry_for_domain_unique_id",
-                return_value=object(),
-            ),
-        ):
-            result = await flow.async_oauth_create_entry({"token": token})
         self.assertEqual(result["reason"], "already_configured")
 
 

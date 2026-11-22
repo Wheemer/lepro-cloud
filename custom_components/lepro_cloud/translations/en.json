@@ -1,14 +1,6 @@
 {
   "config": {
     "step": {
-      "user": {
-        "title": "Lepro Cloud",
-        "description": "Choose how to sign in.",
-        "menu_options": {
-          "email": "Email address and password",
-          "app": "Sign in through the Lepro app (including Apple accounts)"
-        }
-      },
       "reconfigure": {
         "title": "Update Lepro Cloud",
         "description": "Use Automatic unless you need to override the regional server selected for your Lepro Home account.",
@@ -35,10 +27,6 @@
           "password": "Password",
           "region_override": "Server region (optional)"
         }
-      },
-      "app": {
-        "title": "Authorize Lepro Cloud",
-        "description": "Continue on the iPhone where the Lepro app is installed and signed in. Open the authorization link and approve access in Lepro, then return to Home Assistant. Your Apple password stays with Apple."
       }
     },
     "error": {
@@ -52,17 +40,7 @@
       "already_configured": "This Lepro Cloud account is already configured.",
       "reconfigure_successful": "Lepro Cloud configuration updated.",
       "reauth_successful": "Lepro Cloud reconnected.",
-      "invalid_auth": "Lepro authorization expired or was rejected. Try signing in again.",
-      "cannot_connect": "Could not complete Lepro authorization. Please try again.",
-      "wrong_account": "Authorize the same Lepro account to reconnect this integration.",
-      "no_url_available": "Home Assistant could not determine its callback address. Open setup from the Home Assistant interface.",
-      "user_rejected_authorize": "Authorization was cancelled.",
-      "authorize_url_timeout": "Could not open Lepro authorization. Please try again.",
-      "oauth_timeout": "Lepro authorization timed out. Please try again.",
-      "oauth_unauthorized": "Lepro authorization expired or was rejected. Try signing in again.",
-      "oauth_failed": "Could not complete Lepro authorization. Please try again.",
-      "oauth_error": "Lepro returned incomplete authorization credentials.",
-      "oauth_implementation_unavailable": "Lepro app authorization is unavailable. Please try again."
+      "legacy_app_reauth": "Open Configure and enter the email and password for a Lepro account with access to your devices."
     }
   }
 }

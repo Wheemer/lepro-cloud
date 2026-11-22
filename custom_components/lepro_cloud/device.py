@@ -20,13 +20,15 @@ def device_type(device: dict[str, Any]) -> int | None:
         if value is None:
             continue
         reported = parse_wire_integer(value)
+        if reported is None:
+            continue
         # Product IDs 68/115 identify light hardware in the APK catalog.
         # A conflicting plug type must not select an on/off-only platform.
         # Keep explicit camera/unsupported types excluded.
         if reported == DEVICE_TYPE_PLUG and apk_product_series(device) is not None:
             return DEVICE_TYPE_LIGHT
         return reported
-    return None
+    return DEVICE_TYPE_LIGHT if apk_product_series(device) is not None else None
 
 
 def apk_product_series(device: Mapping[str, Any]) -> str | None:

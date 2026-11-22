@@ -119,6 +119,13 @@ def _reconcile_registry(
     for registered in dr.async_entries_for_config_entry(devices, entry.entry_id):
         identifiers = registered.identifiers & valid
         if not identifiers:
+            if (
+                getattr(
+                    getattr(coordinator, "api", None), "discovery_incomplete", False
+                )
+                is True
+            ):
+                continue
             for entity in er.async_entries_for_device(entities, registered.id):
                 if entity.config_entry_id == entry.entry_id:
                     entities.async_remove(entity.entity_id)

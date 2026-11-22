@@ -9,6 +9,8 @@ from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 
 def _install_client_import_stubs() -> None:
     homeassistant = types.ModuleType("homeassistant")
@@ -526,3 +528,58 @@ def test_certificate_redirect_loop_is_bounded():
     else:
         raise AssertionError("expected bounded redirect failure")
     assert len(session.requests) == 6
+
+
+@pytest.mark.parametrize("failure_kind", ["permission", "network", "invalid_list"])
+def test_incomplete_family_keeps_devices_from_accessible_family(failure_kind) -> None:
+    module = _load_client_module()
+    api = module.LeproApi.__new__(module.LeproApi)
+
+    async def request(_method, path):
+        if path.startswith("/family/list"):
+            return {"list": [{"fid": "owned"}, {"fid": "failed"}]}
+        if "/owned/" in path:
+            return {"list": [{"did": "123", "type": 1}]}
+        if failure_kind == "permission":
+            raise module.LeproResponseError("denied", code=-904)
+        if failure_kind == "network":
+            raise module.LeproApiError("timeout")
+        return {"list": None}
+
+    api._request = request
+    assert [device["did"] for device in asyncio.run(api.async_devices())] == ["123"]
+    assert api.discovery_incomplete
+
+
+@pytest.mark.parametrize("auth_failure", [True, False])
+def test_discovery_raises_when_no_family_can_be_read(auth_failure) -> None:
+    module = _load_client_module()
+    api = module.LeproApi.__new__(module.LeproApi)
+    error = module.LeproAuthError if auth_failure else module.LeproApiError
+
+    async def request(_method, path):
+        if path.startswith("/family/list"):
+            return {"list": [{"fid": "failed"}]}
+        raise error("family lookup failed")
+
+    api._request = request
+    with pytest.raises(error):
+        asyncio.run(api.async_devices())
+
+
+def test_bulb_recovery_requests_builtin_scene_payload() -> None:
+    module = _load_client_module()
+    coordinator = module.LeproCoordinator.__new__(module.LeproCoordinator)
+    assert "d6" in coordinator._state_query_datapoints({"type": 1, "series": "B1"})
+
+
+def test_mqtt_dispatch_discards_callbacks_from_replaced_client() -> None:
+    module = _load_client_module()
+    coordinator = module.LeproCoordinator.__new__(module.LeproCoordinator)
+    old, new = object(), object()
+    coordinator.client = new
+    coordinator._stopping = False
+    calls = []
+    coordinator._dispatch_mqtt(old, calls.append, "old")
+    coordinator._dispatch_mqtt(new, calls.append, "new")
+    assert calls == ["new"]
