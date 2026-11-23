@@ -726,3 +726,51 @@ def test_group_favorites_load_and_play_for_compatible_light_members() -> None:
     assert controls.commands[-1] == ("bulb", {"d1": 1, "d2": 2, "d5": "007801F403E8"})
     assert co.devices["ceiling"]["scenes"] == []
     assert co.devices["plug"]["scenes"] == []
+
+
+def test_s1_device_favorites_survive_a_later_page_failure() -> None:
+    client = _load_module("client")
+    light = _load_module("light")
+    api = client.LeproApi.__new__(client.LeproApi)
+    co = client.LeproCoordinator.__new__(client.LeproCoordinator)
+    co.api = api
+    co.states = {}
+    co.effect_types = {}
+    co.devices = {
+        did: {"did": did, "type": 1, "series": series, "_family_ids": ["home"]}
+        for did, series in (("one", "S1-30"), ("two", "S1-5"))
+    }
+    pattern = "N01:P1000100FF00F210001001EU3V3000640000E1;"
+    calls = []
+
+    async def request(method, path):
+        assert method == "GET"
+        calls.append(path)
+        if "/group/list/" in path:
+            return {"list": []}
+        if "/cid/1/" in path:
+            raise client.LeproApiError("later page unavailable", http_status=503)
+        assert "/v3/scene/list/fid/home/did/" in path and "/cid/0/limit/6/" in path
+        return {
+            "list": [
+                {
+                    "cid": 1,
+                    "name": "Strip favourite",
+                    "striplight": {"dp": "d50", "res": pattern},
+                }
+            ]
+        }
+
+    api._request = request
+    asyncio.run(co._load_device_scenes())
+    controls = FakeCoordinator()
+    for did, device in co.devices.items():
+        assert any(f"/did/{did}/cid/1/" in path for path in calls)
+        entity = light.LeproCloudLight(controls, did, device)
+        entity.hass = FakeHass()
+        assert entity.effect_list == ["Strip favourite"]
+        asyncio.run(entity.async_turn_on(effect="Strip favourite"))
+        assert controls.commands[-1] == (
+            did,
+            {"d1": 1, "d2": 2, "d50": pattern, "d52": 1000},
+        )

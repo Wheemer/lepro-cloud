@@ -1071,7 +1071,42 @@ class LeproCoordinator:
         scenes: list[dict[str, Any]] = []
         cursor = 0
         for _ in range(10000):
-            page = await self.api.async_device_scenes(device, cursor=cursor)
+            try:
+                page = await self.api.async_device_scenes(device, cursor=cursor)
+            except LeproApiError as err:
+                if not scenes or err.code == -904:
+                    raise
+                # The APK commits each successful page before loading the
+                # next one. Keep those results if a later page is unavailable.
+                families = device.get("_family_ids")
+                cached = (
+                    getattr(self, "_family_scene_cache", {}).get(
+                        (str(device.get("did")), str(families[0])), []
+                    )
+                    if isinstance(families, list) and families
+                    else []
+                )
+                log_failure(
+                    _LOGGER,
+                    logging.DEBUG,
+                    "Lepro scene pagination incomplete; keeping loaded scenes",
+                    err,
+                    device=device_index(
+                        getattr(self, "devices", {}), str(device.get("did"))
+                    ),
+                )
+                # The caller assigns the family marker to the returned page.
+                return merge_scenes(
+                    [
+                        {
+                            key: value
+                            for key, value in scene.items()
+                            if key != "_family_id"
+                        }
+                        for scene in cached
+                    ],
+                    scenes,
+                )
             if not page:
                 break
             scenes = merge_scenes(scenes, page)
