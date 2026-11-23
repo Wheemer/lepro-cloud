@@ -639,3 +639,90 @@ def test_numeric_favorites_use_named_brightness_and_survive_dimming() -> None:
     assert values == {"d1": 1, "d2": 2, "d3": 251}
     coordinator.states["light-1"].update(values)
     assert entity.effect == "Mid"
+
+
+def test_group_favorites_load_and_play_for_compatible_light_members() -> None:
+    client = _load_module("client")
+    light = _load_module("light")
+    api = client.LeproApi.__new__(client.LeproApi)
+    co = client.LeproCoordinator.__new__(client.LeproCoordinator)
+    co.api = api
+    co.states = {}
+    co.effect_types = {}
+    co.devices = {
+        did: {"did": did, "type": 1, "series": series, "_family_ids": ["home"]}
+        for did, series in (
+            ("one", "S1-30"),
+            ("two", "S1-5"),
+            ("bulb", "B1"),
+            ("ceiling", "T1"),
+            ("other", "S1-5"),
+        )
+    }
+    co.devices["plug"] = {
+        "did": "plug",
+        "type": 2,
+        "series": "P1",
+        "_family_ids": ["home"],
+    }
+    calls = []
+    pattern = "N01:P1000100FF00F210001001EU3V3000640000E1;"
+
+    async def request(method, path):
+        assert method == "GET"
+        calls.append(path)
+        if "/group/list/" in path:
+            assert "/fid/home/type/0/" in path
+            return {
+                "list": [
+                    {
+                        "gid": "group",
+                        "devicesInfo": [
+                            {"did": did}
+                            for did in ("one", "two", "bulb", "ceiling", "plug")
+                        ],
+                    },
+                    {"gid": "unrelated", "devicesInfo": [{"did": "absent"}]},
+                ]
+            }
+        if "/gid/group/cid/0/limit/6/" in path:
+            return {
+                "list": [
+                    {
+                        "cid": 1,
+                        "name": "Group favorite",
+                        "striplight": {"dp": "d50", "res": pattern},
+                        "smartbulb": {"dp": "d5", "res": "007801F403E8"},
+                        "d5": {"dp": "d50", "res": pattern},
+                    }
+                ]
+            }
+        assert "/did/" in path or "/gid/group/cid/1/limit/6/" in path
+        return {"list": []}
+
+    api._request = request
+    asyncio.run(co._load_device_scenes())
+    assert sum("/group/list/" in path for path in calls) == 1
+    assert sum("/gid/group/" in path for path in calls) == 2
+    assert not any("/gid/unrelated/" in path for path in calls)
+    controls = FakeCoordinator()
+    for did in ("one", "two"):
+        entity = light.LeproCloudLight(controls, did, co.devices[did])
+        entity.hass = FakeHass()
+        assert entity.effect_list == ["Group favorite"]
+        asyncio.run(entity.async_turn_on(effect="Group favorite"))
+        assert controls.commands[-1] == (
+            did,
+            {"d1": 1, "d2": 2, "d50": pattern, "d52": 1000},
+        )
+    assert (
+        light.LeproCloudLight(controls, "other", co.devices["other"]).effect_list
+        is None
+    )
+    bulb = light.LeproCloudLight(controls, "bulb", co.devices["bulb"])
+    bulb.hass = FakeHass()
+    assert "Group favorite" in bulb.effect_list
+    asyncio.run(bulb.async_turn_on(effect="Group favorite"))
+    assert controls.commands[-1] == ("bulb", {"d1": 1, "d2": 2, "d5": "007801F403E8"})
+    assert co.devices["ceiling"]["scenes"] == []
+    assert co.devices["plug"]["scenes"] == []

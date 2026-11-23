@@ -33,6 +33,7 @@ from .const import (
 )
 from .device import (
     device_name,
+    is_light,
     is_supported_device,
     preserve_device_name,
     product_series,
@@ -479,6 +480,13 @@ class LeproApi:
             raise failure
         return list(devices.values())
 
+    async def async_light_groups(self, fid: str) -> list[dict[str, Any]]:
+        """Read the group catalog used by the APK's group screen."""
+        result = await self._request(
+            "GET", f"/v3/group/list/fid/{fid}/type/0/timestamp/{_now_seconds()}"
+        )
+        return _as_list(result)
+
     async def async_device_scenes(
         self, device: Mapping[str, Any], cursor: int = 0
     ) -> list[dict[str, Any]]:
@@ -494,12 +502,14 @@ class LeproApi:
             if isinstance(families, list) and families
             else device.get("fid")
         )
-        did = device.get("did")
-        if not fid or not did:
+        gid = device.get("_scene_group_id")
+        target = gid or device.get("did")
+        scope = "gid" if gid else "did"
+        if not fid or not target:
             return []
         result = await self._request(
             "GET",
-            f"/v3/scene/list/fid/{fid}/did/{did}/cid/{cursor}/limit/6/"
+            f"/v3/scene/list/fid/{fid}/{scope}/{target}/cid/{cursor}/limit/6/"
             f"timestamp/{_now_seconds()}",
         )
         return _as_list(result)
@@ -931,6 +941,56 @@ class LeproCoordinator:
                 embedded if isinstance(embedded, list) else [], result
             )
 
+        await self._load_group_scenes()
+
+    async def _load_group_scenes(self) -> None:
+        """Expose compatible favourites from groups with explicit light membership."""
+        by_family: dict[str, dict[str, dict[str, Any]]] = {}
+        for did, device in self.devices.items():
+            if not is_light(device):
+                continue
+            for fid in device.get("_family_ids") or []:
+                by_family.setdefault(fid, {})[did] = device
+
+        for fid, devices in by_family.items():
+            try:
+                groups = await self.api.async_light_groups(fid)
+            except LeproApiError as err:
+                log_failure(_LOGGER, logging.DEBUG, "Lepro group discovery failed", err)
+                continue
+            for group in groups:
+                gid = group.get("gid")
+                members = group.get("devicesInfo")
+                if not gid or not isinstance(members, list):
+                    continue
+                eligible = {
+                    str(member.get("did"))
+                    for member in members
+                    if isinstance(member, dict) and str(member.get("did")) in devices
+                }
+                if not eligible:
+                    continue
+                try:
+                    async with asyncio.timeout(120):
+                        scenes = await self._collect_scene_pages(
+                            {"fid": fid, "_scene_group_id": gid}
+                        )
+                except (LeproApiError, TimeoutError) as err:
+                    log_failure(
+                        _LOGGER, logging.DEBUG, "Lepro group scenes unavailable", err
+                    )
+                    continue
+                for did in eligible:
+                    device = devices[did]
+                    family = effect_family(device, getattr(self, "effect_types", {}))
+                    group_scenes = [
+                        {**scene, "_family_id": f"{fid}/group/{gid}"}
+                        for scene in scenes
+                        if selected_effect(scene, family, root_fallback=False)
+                        is not None
+                    ]
+                    device["scenes"] = merge_scenes(device["scenes"], group_scenes)
+
     async def _async_device_scenes(
         self, device: Mapping[str, Any]
     ) -> list[dict[str, Any]]:
@@ -987,6 +1047,14 @@ class LeproCoordinator:
                     page = cache[key]
                 else:
                     cache[key] = page
+                    _LOGGER.debug(
+                        "Lepro family scenes loaded: device=%s family=%d scenes=%d",
+                        device_index(
+                            getattr(self, "devices", {}), str(device.get("did"))
+                        ),
+                        family_index,
+                        len(page),
+                    )
                 had_result = True
                 scenes = merge_scenes(scenes, page)
         if not had_result and failure is not None:
