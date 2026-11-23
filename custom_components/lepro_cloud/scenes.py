@@ -46,7 +46,7 @@ def effect_family(device: dict[str, Any], mapping: dict[str, str]) -> str | None
 
 
 def selected_effect(
-    scene: dict[str, Any], family: str | None
+    scene: dict[str, Any], family: str | None, *, root_fallback: bool = True
 ) -> tuple[str, str] | None:
     """Use SceneEntityKt.effect's exact family and only its defined fallbacks."""
     value = scene.get(family if family in EFFECT_FAMILIES else "d5")
@@ -54,7 +54,7 @@ def selected_effect(
         value = scene.get("neonlight")
     # LightBaseActivity.sceneEffect falls back to the root d5 EffectEntity
     # when family selection returns null, after striplight -> neonlight.
-    if not isinstance(value, dict):
+    if root_fallback and not isinstance(value, dict):
         value = scene.get("d5")
     if not isinstance(value, dict):
         return None

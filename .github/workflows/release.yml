@@ -49,6 +49,9 @@ jobs:
         run: |
           notes="docs/releases/$GITHUB_REF_NAME.md"
           args=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            args+=(--prerelease --latest=false)
+          fi
           if [[ -f "$notes" ]]; then
             args+=(--notes-file "$notes")
           fi
