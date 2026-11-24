@@ -59,12 +59,20 @@ def selected_effect(
     if not isinstance(value, dict):
         return None
     dp, res = value.get("dp"), value.get("res")
-    if dp not in {"d3", "d5", "d6", "d50", "d52"} or not isinstance(res, str):
+    if not isinstance(dp, str):
         return None
-    if dp in {"d6", "d50"} and not res:
+    if dp in {"d3", "d52"}:
+        # AIotUtils writes the saved brightness and ignores res for these.
+        return dp, ""
+    if dp not in {"d5", "d6", "d50"} or not isinstance(res, str) or not res:
         return None
-    if dp == "d5" and parse_lepro_hsv(res) is None:
-        return None
+    if dp == "d5":
+        # The APK keeps the first eight HSV digits and appends brightness.
+        # Normalize here so state matching can still compare a full d5 value.
+        hue_saturation = res[:8]
+        if len(hue_saturation) != 8 or parse_lepro_hsv(f"{hue_saturation}0000") is None:
+            return None
+        res = res if parse_lepro_hsv(res) is not None else f"{hue_saturation}0000"
     if dp == "d6":
         try:
             scene_brightness(res, 1000)

@@ -107,6 +107,11 @@ STV_STATE_DATAPOINTS = RGBIC_STATE_DATAPOINTS + ("d157", "d172")
 PLUG_STATE_DATAPOINTS = (DP_ONLINE, DP_ON, "d100", "d101", "d102", "d4", "d5")
 
 
+def topic_online_probe(device_id: str) -> str:
+    """Return the app's lightweight device status request topic."""
+    return f"{MQTT_TOPIC_PREFIX}/{device_id}/prp/dsr/app/get"
+
+
 def topic_get(device_id: str) -> str:
     """Return the Lepro property-get topic for a device."""
     return f"{MQTT_TOPIC_PREFIX}/{device_id}/prp/get"
@@ -125,10 +130,13 @@ def parse_wire_integer(value: Any, *, allow_bool: bool = False) -> int | None:
         return value if -(2**31) <= value < 2**31 else None
     if isinstance(value, str):
         value = value.strip(" \t\r\n")
-        if re.fullmatch(
-            r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?",
-            value,
-        ) is None:
+        if (
+            re.fullmatch(
+                r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?",
+                value,
+            )
+            is None
+        ):
             return None
     elif not isinstance(value, float):
         return None

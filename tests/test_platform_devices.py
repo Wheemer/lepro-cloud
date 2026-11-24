@@ -666,6 +666,7 @@ def test_group_favorites_load_and_play_for_compatible_light_members() -> None:
         "_family_ids": ["home"],
     }
     calls = []
+    membership_removed = False
     pattern = "N01:P1000100FF00F210001001EU3V3000640000E1;"
 
     async def request(method, path):
@@ -673,6 +674,8 @@ def test_group_favorites_load_and_play_for_compatible_light_members() -> None:
         calls.append(path)
         if "/group/list/" in path:
             assert "/fid/home/type/0/" in path
+            if membership_removed:
+                return {"list": []}
             return {
                 "list": [
                     {
@@ -726,6 +729,10 @@ def test_group_favorites_load_and_play_for_compatible_light_members() -> None:
     assert controls.commands[-1] == ("bulb", {"d1": 1, "d2": 2, "d5": "007801F403E8"})
     assert co.devices["ceiling"]["scenes"] == []
     assert co.devices["plug"]["scenes"] == []
+    membership_removed = True
+    asyncio.run(co._load_device_scenes())
+    assert co.devices["one"]["scenes"] == []
+    assert co.devices["two"]["scenes"] == []
 
 
 def test_s1_device_favorites_survive_a_later_page_failure() -> None:
@@ -774,3 +781,54 @@ def test_s1_device_favorites_survive_a_later_page_failure() -> None:
             did,
             {"d1": 1, "d2": 2, "d50": pattern, "d52": 1000},
         )
+
+
+def test_s1_favorites_accept_apk_hs_prefix_and_brightness_only_without_res():
+    light = _load_module("light")
+    coordinator = FakeCoordinator()
+    device = {
+        "type": 1,
+        "series": "S1-5",
+        "scenes": [
+            {
+                "name": "Colour",
+                "striplight": {
+                    "dp": "d5",
+                    "res": "007801F4",
+                    "scene": "brightness=500",
+                },
+            },
+            {
+                "name": "Brightness",
+                "striplight": {"dp": "d52", "scene": "brightness=600"},
+            },
+        ],
+    }
+    entity = light.LeproCloudLight(coordinator, "light-1", device)
+    entity.hass = FakeHass()
+    assert entity.effect_list == ["Colour", "Brightness"]
+    asyncio.run(entity.async_turn_on(effect="Colour"))
+    assert coordinator.commands[-1][1] == {"d1": 1, "d2": 2, "d5": "007801F401F4"}
+    coordinator.states["light-1"] = {"d2": 2, "d5": "007801F401F4"}
+    assert entity.effect == "Colour"
+    asyncio.run(entity.async_turn_on(effect="Brightness"))
+    assert coordinator.commands[-1][1] == {"d1": 1, "d2": 2, "d52": 600}
+
+
+def test_malformed_scene_datapoint_cannot_hide_valid_s1_favorites_or_break_get():
+    client = _load_module("client")
+    light = _load_module("light")
+    device = {
+        "type": 1,
+        "series": "S1-5",
+        "scenes": [
+            {"name": "Malformed", "striplight": {"dp": ["d50"], "res": "invalid"}},
+            {"name": "Valid", "striplight": {"dp": "d50", "res": "native-pattern"}},
+        ],
+    }
+    controls = FakeCoordinator()
+    entity = light.LeproCloudLight(controls, "light-1", device)
+    assert entity.effect_list == ["Valid"]
+    co = client.LeproCoordinator.__new__(client.LeproCoordinator)
+    co.effect_types = {}
+    assert "d50" in co._state_query_datapoints(device)

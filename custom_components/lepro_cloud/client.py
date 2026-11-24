@@ -58,6 +58,7 @@ from .protocol import (
     state_datapoints_for_series,
     subscription_topics,
     topic_get,
+    topic_online_probe,
     topic_set,
 )
 from .scenes import effect_family, merge_scenes, selected_effect
@@ -65,6 +66,7 @@ from .scenes import effect_family, merge_scenes, selected_effect
 _LOGGER = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT = 20
+SCENE_PAGE_BUDGET = 120
 MQTT_KEEPALIVE = 20
 
 
@@ -118,6 +120,18 @@ class LeproMqttError(LeproError):
 
 def _now_seconds() -> int:
     return int(time.time())
+
+
+def _mqtt_callback(callback: Callable[..., None]) -> Callable[..., None]:
+    """Remove the secret-bearing Paho thread name before any callback logs."""
+
+    def wrapped(*args: Any) -> None:
+        thread = threading.current_thread()
+        if thread.name.startswith("paho-mqtt-client-lepro-app-"):
+            thread.name = "lepro-mqtt"
+        callback(*args)
+
+    return wrapped
 
 
 def _persistent_mac(account: str) -> str:
@@ -408,7 +422,12 @@ class LeproApi:
         failure = None
         accessible = False
         devices: dict[str, dict[str, Any]] = {}
-        for family_index, family in enumerate(_as_list(families), 1):
+        family_list = _as_list(families)
+        # RemoteRepository.deviceFamily stores the first returned home as
+        # leproFid. The app's individual Favorites request uses that value.
+        default_fid = family_list[0].get("fid") if family_list else None
+        self.default_scene_family = str(default_fid) if default_fid else None
+        for family_index, family in enumerate(family_list, 1):
             fid = family.get("fid")
             if not fid:
                 continue
@@ -512,6 +531,15 @@ class LeproApi:
             f"/v3/scene/list/fid/{fid}/{scope}/{target}/cid/{cursor}/limit/6/"
             f"timestamp/{_now_seconds()}",
         )
+        raw = result.get("list")
+        if isinstance(raw, list):
+            scenes = [scene for scene in raw if isinstance(scene, dict)]
+            if scenes and len(scenes) != len(raw):
+                _LOGGER.debug(
+                    "Lepro scene page skipped malformed records: skipped=%d",
+                    len(raw) - len(scenes),
+                )
+                return scenes
         return _as_list(result)
 
     async def async_product_configs(self) -> list[dict[str, Any]]:
@@ -741,9 +769,9 @@ class LeproCoordinator:
             configs = list(merged.values())
         self._product_configs = configs
         self.effect_types = {
-            str(item["series"]).upper(): str(item["effect"])
+            str(item["series"]).upper(): item["effect"]
             for item in configs
-            if item.get("series")
+            if item.get("series") and isinstance(item.get("effect"), str)
         }
         for device in self.devices.values():
             config = next(
@@ -913,7 +941,17 @@ class LeproCoordinator:
             await self._async_start_mqtt(info, certs)
             self._profile_signature = signature
             self._mqtt_secret = self.api.secret
+        else:
+            self._probe_unavailable_lights()
         self._notify_all()
+
+    def _probe_unavailable_lights(self) -> None:
+        """Check offline lights independently of user commands."""
+        if self.client is None or not self.connected or self._stopping:
+            return
+        for did, device in self.devices.items():
+            if is_light(device) and not self.device_available(did):
+                self._probe_online(did)
 
     async def _load_device_scenes(self) -> None:
         """Load app scenes without making device discovery unavailable."""
@@ -936,12 +974,29 @@ class LeproCoordinator:
                 result = getattr(self, "_scene_cache", {}).get(did, [])
             elif hasattr(self, "_scene_cache"):
                 self._scene_cache[did] = result
+            # Refresh may reuse the same discovery record. Keep the original
+            # embedded scenes separate from the merged device/group catalogs.
             embedded = device.get("scenes")
+            if embedded is not device.get("_merged_scenes"):
+                device["_embedded_scenes"] = embedded
+            embedded = device.get("_embedded_scenes")
             device["scenes"] = merge_scenes(
                 embedded if isinstance(embedded, list) else [], result
             )
 
         await self._load_group_scenes()
+        for _, device in device_items:
+            device["_merged_scenes"] = device["scenes"]
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            for index, device in enumerate(self.devices.values(), 1):
+                family = effect_family(device, getattr(self, "effect_types", {}))
+                scenes = device["scenes"]
+                _LOGGER.debug(
+                    "Lepro scene catalog: device=%d records=%d playable=%d",
+                    index,
+                    len(scenes),
+                    sum(selected_effect(scene, family) is not None for scene in scenes),
+                )
 
     async def _load_group_scenes(self) -> None:
         """Expose compatible favourites from groups with explicit light membership."""
@@ -971,10 +1026,9 @@ class LeproCoordinator:
                 if not eligible:
                     continue
                 try:
-                    async with asyncio.timeout(120):
-                        scenes = await self._collect_scene_pages(
-                            {"fid": fid, "_scene_group_id": gid}
-                        )
+                    scenes = await self._collect_scene_pages(
+                        {"fid": fid, "_scene_group_id": gid}
+                    )
                 except (LeproApiError, TimeoutError) as err:
                     log_failure(
                         _LOGGER, logging.DEBUG, "Lepro group scenes unavailable", err
@@ -997,69 +1051,78 @@ class LeproCoordinator:
         """Load scenes in every discovered family context, like app selection."""
         families = device.get("_family_ids")
         if not isinstance(families, list) or not families:
-            async with asyncio.timeout(120):
-                return await self._collect_scene_pages(device)
+            return await self._collect_scene_pages(device)
         cache = getattr(self, "_family_scene_cache", {})
         self._family_scene_cache = cache
         scenes: list[dict[str, Any]] = []
         had_result = False
         failure: LeproApiError | None = None
-        async with asyncio.timeout(120):
-            for family_index, fid in enumerate(families, 1):
-                key = (str(device.get("did")), str(fid))
-                scoped = {**device, "_family_ids": [str(fid)]}
-                try:
-                    page = [
-                        {**scene, "_family_id": str(fid)}
-                        for scene in await self._collect_scene_pages(scoped)
-                    ]
-                except LeproAuthError:
-                    raise
-                except LeproApiError as err:
-                    if isinstance(err, LeproResponseError) and err.code == -904:
-                        # A share can allow control without scene access.
-                        log_failure(
-                            _LOGGER,
-                            logging.DEBUG,
-                            "Lepro scene access denied",
-                            err,
-                            device=device_index(
-                                getattr(self, "devices", {}), str(device.get("did"))
-                            ),
-                            family=family_index,
-                        )
-                        cache.pop(key, None)
-                        had_result = True
-                        continue
+        default_family = getattr(
+            getattr(self, "api", None), "default_scene_family", None
+        )
+        fallback_family = (
+            default_family
+            if isinstance(default_family, str)
+            and default_family
+            and default_family not in families
+            else None
+        )
+        contexts = [*families, fallback_family] if fallback_family else families
+        for family_index, fid in enumerate(contexts, 1):
+            if fid == fallback_family and scenes:
+                break
+            key = (str(device.get("did")), str(fid))
+            scoped = {**device, "_family_ids": [str(fid)]}
+            try:
+                page = [
+                    {**scene, "_family_id": str(fid)}
+                    for scene in await self._collect_scene_pages(scoped)
+                ]
+            except LeproAuthError:
+                raise
+            except LeproApiError as err:
+                if isinstance(err, LeproResponseError) and err.code == -904:
+                    # A share can allow control without scene access.
                     log_failure(
                         _LOGGER,
                         logging.DEBUG,
-                        "Lepro family scenes unavailable; retaining cached scenes",
+                        "Lepro scene access denied",
                         err,
                         device=device_index(
                             getattr(self, "devices", {}), str(device.get("did"))
                         ),
                         family=family_index,
                     )
-                    failure = err
-                    if key not in cache:
-                        continue
-                    page = cache[key]
-                else:
-                    cache[key] = page
-                    _LOGGER.debug(
-                        "Lepro family scenes loaded: device=%s family=%d scenes=%d",
-                        device_index(
-                            getattr(self, "devices", {}), str(device.get("did"))
-                        ),
-                        family_index,
-                        len(page),
-                    )
-                had_result = True
-                scenes = merge_scenes(scenes, page)
+                    cache.pop(key, None)
+                    had_result = True
+                    continue
+                log_failure(
+                    _LOGGER,
+                    logging.DEBUG,
+                    "Lepro family scenes unavailable; retaining cached scenes",
+                    err,
+                    device=device_index(
+                        getattr(self, "devices", {}), str(device.get("did"))
+                    ),
+                    family=family_index,
+                )
+                failure = err
+                if key not in cache:
+                    continue
+                page = cache[key]
+            else:
+                cache[key] = page
+                _LOGGER.debug(
+                    "Lepro family scenes loaded: device=%s family=%d scenes=%d",
+                    device_index(getattr(self, "devices", {}), str(device.get("did"))),
+                    family_index,
+                    len(page),
+                )
+            had_result = True
+            scenes = merge_scenes(scenes, page)
         if not had_result and failure is not None:
             raise failure
-        active = {(str(device.get("did")), str(fid)) for fid in families}
+        active = {(str(device.get("did")), str(fid)) for fid in contexts}
         for key in list(cache):
             if key[0] == str(device.get("did")) and key not in active:
                 cache.pop(key)
@@ -1070,11 +1133,18 @@ class LeproCoordinator:
     ) -> list[dict[str, Any]]:
         scenes: list[dict[str, Any]] = []
         cursor = 0
+        deadline = asyncio.get_running_loop().time() + SCENE_PAGE_BUDGET
         for _ in range(10000):
             try:
-                page = await self.api.async_device_scenes(device, cursor=cursor)
-            except LeproApiError as err:
-                if not scenes or err.code == -904:
+                async with asyncio.timeout_at(deadline):
+                    page = await self.api.async_device_scenes(device, cursor=cursor)
+            except (LeproApiError, TimeoutError) as err:
+                if not scenes and isinstance(err, TimeoutError):
+                    raise LeproApiError(
+                        "Lepro scene pagination exceeded its time budget",
+                        reason="request_timeout",
+                    ) from None
+                if not scenes or getattr(err, "code", None) == -904:
                     raise
                 # The APK commits each successful page before loading the
                 # next one. Keep those results if a later page is unavailable.
@@ -1188,11 +1258,11 @@ class LeproCoordinator:
                 tls_version=ssl.PROTOCOL_TLS_CLIENT,
             )
             client.reconnect_delay_set(min_delay=2, max_delay=300)
-            client.on_connect = self._on_connect
-            client.on_connect_fail = self._on_connect_fail
-            client.on_disconnect = self._on_disconnect
-            client.on_message = self._on_message
-            client.on_subscribe = self._on_subscribe
+            client.on_connect = _mqtt_callback(self._on_connect)
+            client.on_connect_fail = _mqtt_callback(self._on_connect_fail)
+            client.on_disconnect = _mqtt_callback(self._on_disconnect)
+            client.on_message = _mqtt_callback(self._on_message)
+            client.on_subscribe = _mqtt_callback(self._on_subscribe)
             client.connect_async(str(info["host"]), int(info["port"]), MQTT_KEEPALIVE)
             self.client = client
             self.tmp = tmp
@@ -1605,12 +1675,32 @@ class LeproCoordinator:
         with self._command_lock:
             pending = self._pending_commands.pop(identifier, None)
         if pending is not None and not self._stopping:
-            # ack=0 can legitimately omit setr; request authoritative state.
+            # Commands without an explicit ACK can still produce state reports.
             _LOGGER.debug(
-                "Lepro command response timeout: device=%s; requesting state",
+                "Lepro matching command ACK not received: device=%s; requesting state",
                 device_index(getattr(self, "devices", {}), pending[0]),
             )
-            self._query_device(pending[0])
+            did = pending[0]
+            self._query_device(did)
+            device = self.devices.get(did)
+            if (
+                self.connected
+                and self.client
+                and device
+                and is_light(device)
+                and not self.device_available(did)
+            ):
+                self._probe_online(did)
+
+    def _probe_online(self, did: str) -> None:
+        """Ask an unresponsive light for power/online state using the APK probe."""
+        try:
+            result = self.client.publish(topic_online_probe(did), '{"d":["d1"]}', qos=0)
+        except Exception as err:  # noqa: BLE001 - foreign messages can contain secrets
+            log_failure(_LOGGER, logging.DEBUG, "Lepro online probe failed", err)
+            return
+        if result is not None and result.rc != mqtt.MQTT_ERR_SUCCESS:
+            _LOGGER.debug("Lepro online probe rejected: code=%s", safe_code(result.rc))
 
     def _schedule_command_timeout(self, identifier: int) -> None:
         if self._stopping:

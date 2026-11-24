@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 import types
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
@@ -230,3 +231,68 @@ def test_unknown_device_and_topic_are_ignored() -> None:
             None, None, types.SimpleNamespace(topic=topic, payload=b'{"d":{"d1":1}}')
         )
     assert coordinator.states == {}
+
+
+def test_mqtt_callback_hides_session_secret_from_log_thread_name() -> None:
+    module = _load_client_module()
+    names = []
+    callback = module._mqtt_callback(
+        lambda: names.append(threading.current_thread().name)
+    )
+    thread = threading.Thread(
+        target=callback, name="paho-mqtt-client-lepro-app-test-secret"
+    )
+    thread.start()
+    thread.join()
+    assert names == ["lepro-mqtt"]
+
+
+def test_unavailable_light_timeout_adds_apk_online_probe_without_set() -> None:
+    module = _load_client_module()
+    co = module.LeproCoordinator.__new__(module.LeproCoordinator)
+    co.client = RecordingMqttClient()
+    co.devices = {"123": {"did": "123", "type": 1, "series": "S1-5"}}
+    co.states = {}
+    co._fresh = set()
+    co._stopping = False
+    co.connected = True
+    co._command_lock = threading.Lock()
+    co._pending_commands = {1: ("123", 0)}
+    co._expire_command(1)
+    assert [topic for topic, _, _ in co.client.publishes] == [
+        "le/123/prp/get",
+        "le/123/prp/dsr/app/get",
+    ]
+    assert co.client.publishes[-1][1:] == ('{"d":["d1"]}', 0)
+
+
+def test_idle_recovery_probes_only_unavailable_lights_and_accepts_power_reply():
+    module = _load_client_module()
+    co = module.LeproCoordinator.__new__(module.LeproCoordinator)
+    co.client = RecordingMqttClient()
+    co.devices = {
+        "101": {"type": 1, "series": "S1-30"},
+        "102": {"type": 1, "series": "S1-5"},
+        "103": {"type": 2, "series": "P1"},
+    }
+    co.connected = True
+    co._stopping = False
+    co._fresh = {"101", "102"}
+    co.states = {"101": {"online": 1}, "102": {"online": 0}}
+    co.listeners = set()
+    co.hass = types.SimpleNamespace(
+        loop=types.SimpleNamespace(call_soon_threadsafe=lambda fn, *args: fn(*args))
+    )
+    co._probe_unavailable_lights()
+    assert co.client.publishes == [("le/102/prp/dsr/app/get", '{"d":["d1"]}', 0)]
+    co._on_message(
+        co.client,
+        None,
+        types.SimpleNamespace(
+            topic="le/102/prp/dsr/app/getr", payload=b'{"d":{"d1":0}}'
+        ),
+    )
+    assert co.device_available("102")
+    assert co.states["102"]["d1"] == 0
+    co._probe_unavailable_lights()
+    assert len(co.client.publishes) == 1

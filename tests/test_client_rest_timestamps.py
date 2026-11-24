@@ -583,3 +583,73 @@ def test_mqtt_dispatch_discards_callbacks_from_replaced_client() -> None:
     coordinator._dispatch_mqtt(old, calls.append, "old")
     coordinator._dispatch_mqtt(new, calls.append, "new")
     assert calls == ["new"]
+
+
+def test_individual_favorites_fall_back_to_home_selected_by_apk() -> None:
+    module = _load_client_module()
+    api = module.LeproApi.__new__(module.LeproApi)
+    coordinator = module.LeproCoordinator.__new__(module.LeproCoordinator)
+    coordinator.api = api
+    favourite = {"cid": 3, "name": "Direct favourite"}
+    paths = []
+
+    async def request(method, path):
+        assert method == "GET"
+        paths.append(path)
+        if "/family/list/" in path:
+            return {"list": [{"fid": "app-default"}, {"fid": "discovery"}]}
+        if "/device/list/fid/app-default/" in path:
+            return {"list": []}
+        if "/device/list/fid/discovery/" in path:
+            return {
+                "list": [
+                    {"did": "strip", "fid": "discovery", "series": "S1-5", "type": 1}
+                ]
+            }
+        assert "/scene/list/" in path and "/did/strip/" in path
+        if "/fid/app-default/" in path and "/cid/0/" in path:
+            return {"list": [favourite]}
+        return {"list": []}
+
+    api._request = request
+    (device,) = asyncio.run(api.async_devices())
+    assert device["_family_ids"] == ["discovery"]
+    assert asyncio.run(coordinator._async_device_scenes(device)) == [
+        {**favourite, "_family_id": "app-default"},
+    ]
+    assert "/fid/discovery/did/strip/cid/0/" in paths[3]
+    assert "/fid/app-default/did/strip/cid/0/" in paths[4]
+
+
+def test_scene_budget_preserves_first_page_on_initial_s1_load(monkeypatch):
+    module = _load_client_module()
+    monkeypatch.setattr(module, "SCENE_PAGE_BUDGET", 0.01)
+    coordinator = module.LeproCoordinator.__new__(module.LeproCoordinator)
+    favourite = {"cid": 1, "name": "Direct favourite"}
+    cursors = []
+
+    async def get_page(_device, cursor):
+        cursors.append(cursor)
+        if cursor == 0:
+            return [favourite]
+        await asyncio.Event().wait()
+
+    coordinator.api = types.SimpleNamespace(async_device_scenes=get_page)
+    device = {"did": "strip", "series": "S1-5", "_family_ids": ["home"]}
+    assert asyncio.run(coordinator._async_device_scenes(device)) == [
+        {**favourite, "_family_id": "home"}
+    ]
+    assert cursors == [0, 1]
+
+
+def test_scene_loader_preserves_valid_records_from_mixed_vendor_page():
+    module = _load_client_module()
+    api = module.LeproApi.__new__(module.LeproApi)
+    favourite = {"cid": 1, "striplight": {"dp": "d50", "res": "wire-pattern"}}
+
+    async def request(_method, _path):
+        return {"list": [None, favourite, "malformed"]}
+
+    api._request = request
+    device = {"did": "strip", "fid": "home"}
+    assert asyncio.run(api.async_device_scenes(device)) == [favourite]
